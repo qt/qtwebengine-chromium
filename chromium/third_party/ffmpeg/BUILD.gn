@@ -332,9 +332,9 @@ target(link_target_type, "ffmpeg_internal") {
 
   if (ffmpeg_use_unsafe_atomics) {
     if (is_posix || is_fuchsia) {
-      include_dirs += [ "compat/atomics/gcc" ]
+      include_dirs += [ "compat/atomics", "compat/atomics/dummy" ]
     } else if (is_win) {
-      include_dirs += [ "compat/atomics/win32" ]
+      include_dirs += [ "compat/atomics", "compat/atomics/win32" ]
     }
   }
 
