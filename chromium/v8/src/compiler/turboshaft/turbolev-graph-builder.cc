@@ -2009,8 +2009,11 @@ class GraphBuildingNodeProcessor {
                            __ HeapConstant(node->feedback().vector),
                            Map(node->context())};
 
-    GENERATE_AND_MAP_BUILTIN_CALL(node, Builtin::kDefineNamedOwnIC, frame_state,
-                                  base::VectorOf(arguments));
+    GENERATE_AND_MAP_BUILTIN_CALL(node,
+                                  node->in_literal()
+                                      ? Builtin::kDefineNamedOwnInLiteralIC
+                                      : Builtin::kDefineNamedOwnIC,
+                                  frame_state, base::VectorOf(arguments));
     return maglev::ProcessResult::kContinue;
   }
 

@@ -7519,11 +7519,12 @@ ReduceResult MaglevGraphBuilder::VisitDefineNamedOwnPropertyHelper(
       broker()->GetFeedbackForPropertyAccess(
           feedback_source, compiler::AccessMode::kStore, name);
 
-  auto build_generic_access = [this, object, &name, &feedback_source]() {
+  auto build_generic_access = [this, object, &name, in_literal,
+                               &feedback_source]() {
     ValueNode* context = GetContext();
     ValueNode* value = GetAccumulator();
     AddNewNode<DefineNamedOwnGeneric>({context, object, value}, name,
-                                      feedback_source);
+                                      in_literal, feedback_source);
     return ReduceResult::Done();
   };
   switch (processed_feedback.kind()) {
