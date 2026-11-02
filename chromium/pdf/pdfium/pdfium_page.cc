@@ -1877,6 +1877,9 @@ Thumbnail PDFiumPage::GenerateThumbnail(float device_pixel_ratio) {
   DCHECK(available());
 
   FPDF_PAGE page = GetPage();
+  // Make sure `page` stays valid for the duration of this function.
+  ScopedUnloadPreventer scoped_unload_preventer(this);
+
   const bool has_alpha = !!FPDFPage_HasTransparency(page);
   const int format = has_alpha ? FPDFBitmap_BGRA : FPDFBitmap_BGRx;
 
