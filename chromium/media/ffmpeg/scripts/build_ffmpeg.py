@@ -42,7 +42,7 @@ BRANDINGS = [
 
 ARCH_MAP = {
     'android': ['ia32', 'x64', 'arm-neon', 'arm64'],
-    'linux': ['ia32', 'x64', 'noasm-x64', 'arm', 'arm-neon', 'arm64', 'riscv64'],
+    'linux': ['ia32', 'x64', 'noasm-x64', 'arm-neon', 'arm64', 'riscv64'],
     'mac': ['x64', 'arm64'],
     'win': ['ia32', 'x64', 'arm64'],
 }
@@ -219,7 +219,7 @@ def SetupAndroidToolchain(target_arch):
     toolchain_level = api_level
     toolchain_bin_prefix = target_arch
 
-    if target_arch == 'arm-neon' or target_arch == 'arm':
+    if target_arch == 'arm-neon':
         toolchain_bin_prefix = 'arm-linux-androideabi'
     elif target_arch == 'arm64':
         toolchain_level = api64_level
@@ -443,7 +443,7 @@ def BuildFFmpeg(target_os, target_arch, host_os, host_arch, parallel_jobs,
         return
 
     shutil.rmtree(config_dir, ignore_errors=True)
-    os.makedirs(config_dir)
+    os.makedirs(os.path.join(config_dir, 'ffbuild'))
 
     PrintAndCheckCall([os.path.join(FFMPEG_DIR, 'configure')] +
                       configure_flags,
@@ -494,7 +494,21 @@ def BuildFFmpeg(target_os, target_arch, host_os, host_arch, parallel_jobs,
     if target_arch == 'ia32':
         pre_make_rewrites += [
             (r'(#define HAVE_EBP_AVAILABLE [01])',
-             r'/* \1 -- ebp selection is done by the chrome build */')
+             r'/* \1 -- ebp selection is done by the chrome build */'),
+            (r'(#define HAVE_X86_32_7REGS [01])',
+             r'#define HAVE_X86_32_7REGS 0 /* \1 -- forced to 0 to avoid inline asm register exhaustion */'),
+            (r'(#define HAVE_X86_6REGS [01])',
+             r'#define HAVE_X86_6REGS 0 /* \1 -- forced to 0 to avoid inline asm register exhaustion */'),
+            (r'(#define HAVE_X86_7REGS [01])',
+             r'#define HAVE_X86_7REGS 0 /* \1 -- forced to 0 to avoid inline asm register exhaustion */')
+        ]
+        pre_make_asm_rewrites += [
+            (r'(%define HAVE_X86_32_7REGS [01])',
+             r'%define HAVE_X86_32_7REGS 0 ; \1 -- forced to 0 to avoid inline asm register exhaustion'),
+            (r'(%define HAVE_X86_6REGS [01])',
+             r'%define HAVE_X86_6REGS 0 ; \1 -- forced to 0 to avoid inline asm register exhaustion'),
+            (r'(%define HAVE_X86_7REGS [01])',
+             r'%define HAVE_X86_7REGS 0 ; \1 -- forced to 0 to avoid inline asm register exhaustion')
         ]
 
     RewriteFile(os.path.join(config_dir, 'config.h'), pre_make_rewrites)
@@ -549,7 +563,7 @@ def BuildFFmpeg(target_os, target_arch, host_os, host_arch, parallel_jobs,
          r'/* \1 -- elide long configuration string from binary */')
     ]
 
-    if target_arch in ('arm', 'arm-neon', 'arm64'):
+    if target_arch in ('arm-neon', 'arm64'):
         post_make_rewrites += [
             (r'(#define HAVE_VFP_ARGS [01])',
              r'/* \1 -- softfp/hardfp selection is done by the chrome build */'
@@ -672,6 +686,8 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch,
         '--disable-faan',
         '--disable-alsa',
         '--disable-iamf',
+        '--disable-checkasm',
+
 
         # Disable automatically detected external libraries. This prevents
         # automatic inclusion of things like hardware decoders. Each roll should
@@ -744,7 +760,7 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch,
                 configure_flags['Common'].extend([
                     '--disable-x86asm',
                 ])
-        elif target_arch == 'arm' or target_arch == 'arm-neon':
+        elif target_arch == 'arm-neon':
             # TODO(ihf): ARM compile flags are tricky. The final options
             # overriding everything live in chroot /build/*/etc/make.conf
             # (some of them coming from src/overlays/overlay-<BOARD>/make.conf).
@@ -770,24 +786,11 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch,
                     # av_get_cpu_flags() is run outside of the sandbox when enabled.
                     '--enable-neon',
                     '--extra-cflags=-mtune=generic-armv7-a',
+                    '--extra-cflags=-mfpu=neon',
                     # Enabling softfp lets us choose either softfp or hardfp when doing
                     # the chrome build.
                     '--extra-cflags=-mfloat-abi=softfp',
                 ])
-                if target_arch == 'arm':
-                    print(
-                        'arm-neon is the only supported arm arch for Android.\n'
-                    )
-                    return 1
-
-                if target_arch == 'arm-neon':
-                    configure_flags['Common'].extend([
-                        '--extra-cflags=-mfpu=neon',
-                    ])
-                else:
-                    configure_flags['Common'].extend([
-                        '--extra-cflags=-mfpu=vfpv3-d16',
-                    ])
             else:
                 if host_arch != 'arm':
                     configure_flags['Common'].extend([
@@ -805,16 +808,10 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch,
                         '--extra-cflags=-O2',
                     ])
 
-                if target_arch == 'arm-neon':
-                    configure_flags['Common'].extend([
-                        '--enable-neon',
-                        '--extra-cflags=-mfpu=neon',
-                    ])
-                else:
-                    configure_flags['Common'].extend([
-                        '--disable-neon',
-                        '--extra-cflags=-mfpu=vfpv3-d16',
-                    ])
+                configure_flags['Common'].extend([
+                    '--enable-neon',
+                    '--extra-cflags=-mfpu=neon',
+                ])
         elif target_arch == 'arm64':
             if target_os != 'android':
                 if host_arch != 'arm64':
@@ -830,9 +827,6 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch,
                     '--sysroot=' +
                     os.path.join(CHROMIUM_ROOT_DIR,
                                  'build/linux/debian_bullseye_arm64-sysroot'),
-                    # See crbug.com/1467681. These could be removed eventually
-                    '--disable-dotprod',
-                    '--disable-i8mm',
                 ])
             configure_flags['Common'].extend([
                 '--arch=aarch64',
@@ -1023,7 +1017,7 @@ def ConfigureAndBuild(target_arch, target_os, host_os, host_arch,
 
     # Don't build video decoders for 32-bit Android ARM due to binary size
     # concerns.
-    if target_os != 'android' or not target_arch in ("arm", "arm-neon"):
+    if target_os != 'android' or target_arch != "arm-neon":
         do_build_ffmpeg(
             'Chromium', configure_flags['Common'] +
             configure_flags['Chromium'] + configure_args)
