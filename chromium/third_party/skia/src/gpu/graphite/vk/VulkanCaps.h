@@ -118,6 +118,7 @@ public:
     }
 
     bool mustLoadFullImageForMSAA() const { return fMustLoadFullImageForMSAA; }
+    bool sleepAfterLostDeviceWait() const { return fSleepAfterLostDeviceWait; }
 
 private:
     void init(const ContextOptions&,
@@ -294,6 +295,7 @@ private:
 
     // Flags to enable workarounds for driver bugs
     bool fMustLoadFullImageForMSAA = false;
+    bool fSleepAfterLostDeviceWait = false;
 };
 
 } // namespace skgpu::graphite
