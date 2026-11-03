@@ -9644,7 +9644,8 @@ void Isolate::HandleExternalMemoryInterrupt() {
 bool Isolate::RetryCustomAllocate(std::function<bool()> allocate) {
   i::Heap* heap = reinterpret_cast<i::Isolate*>(this)->heap();
   return heap->allocator()->RetryCustomAllocate(
-      [&allocate]() { return allocate(); }, internal::AllocationType::kOld);
+      v8::base::FunctionRef<bool()>([&allocate]() {
+        return allocate(); }), internal::AllocationType::kOld);
 }
 
 IsolateGroup::IsolateGroup(i::IsolateGroup*&& isolate_group)

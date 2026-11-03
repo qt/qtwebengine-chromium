@@ -1511,7 +1511,7 @@ JSDispatchHandle FactoryBase<Impl>::NewJSDispatchHandle(
   // Dispatch entries are only freed on major GCs.
   AllocationType type = AllocationType::kOld;
   auto allocator = isolate()->heap()->allocator();
-  allocator->RetryCustomAllocateOrFail(allocate_callback, type);
+  allocator->RetryCustomAllocateOrFail(v8::base::FunctionRef<bool()>(allocate_callback), type);
   return *result;
 }
 

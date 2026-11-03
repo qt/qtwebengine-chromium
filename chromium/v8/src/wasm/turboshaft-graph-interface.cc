@@ -3861,14 +3861,14 @@ class TurboshaftGraphBuildingInterface
     size_t delta =
         input_sig->parameters().size() - output_sig->parameters().size();
     IterateWasmFXArgBuffer(
-        input_sig->parameters(), [&](size_t index, int offset) {
+        input_sig->parameters(), WasmFXArgBufferCallback([&](size_t index, int offset) {
           if (index < delta) {
             DCHECK_EQ(args[index].type, input_sig->GetParam(index));
             this->Asm().StoreOffHeap(
                 arg_buffer, args[index].op,
                 MemoryRepresentationOffHeap(args[index].type), offset);
           }
-        });
+        }));
     V<Context> native_context = instance_cache_.native_context();
     // Allocate a new continuation for this stack, and invalidate the old one by
     // pointing {StackMemory::current_cont_} to the new one.
@@ -3903,12 +3903,12 @@ class TurboshaftGraphBuildingInterface
     V<WordPtr> arg_buffer = __ Load(stack, LoadOp::Kind::RawAligned(),
                                     MemoryRepresentation::UintPtr(),
                                     StackMemory::arg_buffer_offset());
-    IterateWasmFXArgBuffer(sig->parameters(), [&](size_t index, int offset) {
+    IterateWasmFXArgBuffer(sig->parameters(), WasmFXArgBufferCallback([&](size_t index, int offset) {
       DCHECK_EQ(args[index].type, sig->GetParam(index));
       this->Asm().StoreOffHeap(arg_buffer, args[index].op,
                                MemoryRepresentationOffHeap(args[index].type),
                                offset);
-    });
+    }));
 
     OpIndex result_buffer;
     if (!exc_imm.has_value()) {
@@ -3935,12 +3935,12 @@ class TurboshaftGraphBuildingInterface
               CheckForException::kCatchInThisFrame);
     }
 
-    IterateWasmFXArgBuffer(sig->returns(), [&](size_t index, int offset) {
+    IterateWasmFXArgBuffer(sig->returns(), WasmFXArgBufferCallback([&](size_t index, int offset) {
       DCHECK_EQ(returns[index].type, sig->GetReturn(index));
       returns[index].op =
           __ LoadOffHeap(result_buffer, offset,
                          MemoryRepresentationOffHeap(sig->GetReturn(index)));
-    });
+    }));
   }
 
   void Resume(FullDecoder* decoder, const ContIndexImmediate& imm,
@@ -3965,12 +3965,12 @@ class TurboshaftGraphBuildingInterface
 
     // Unpack tag params.
     const FunctionSig* sig = handlers[handler_index].tag.tag->sig;
-    IterateWasmFXArgBuffer(sig->parameters(), [&](size_t index, int offset) {
+    IterateWasmFXArgBuffer(sig->parameters(), WasmFXArgBufferCallback([&](size_t index, int offset) {
       DCHECK_EQ(tag_params[index].type, sig->GetParam(index));
       tag_params[index].op = this->Asm().LoadOffHeap(
           arg_buffer, offset,
           MemoryRepresentationOffHeap(sig->GetParam(index)));
-    });
+    }));
 
     instance_cache_.ReloadCachedMemory();
     cont_val->op = cont;
@@ -4047,11 +4047,11 @@ class TurboshaftGraphBuildingInterface
         GetWasmEngine()->type_canonicalizer()->LookupFunctionSignature(
             csig_index);
 
-    IterateWasmFXArgBuffer(sig->parameters(), [&](size_t index, int offset) {
+    IterateWasmFXArgBuffer(sig->parameters(), WasmFXArgBufferCallback([&](size_t index, int offset) {
       DCHECK_EQ(args[index].type, sig->GetParam(index));
       __ StoreOffHeap(arg_buffer, args[index].op,
                       MemoryRepresentationOffHeap(args[index].type), offset);
-    });
+    }));
     CallBuiltinThroughJumptable<BuiltinCallDescriptor::WasmFXSuspend>(
         decoder, native_context,
         {wanted_tag, cont, arg_buffer,
@@ -4059,12 +4059,12 @@ class TurboshaftGraphBuildingInterface
         CheckForException::kCatchInThisFrame);
 
     // Unpack tag returns.
-    IterateWasmFXArgBuffer(sig->returns(), [&](size_t index, int offset) {
+    IterateWasmFXArgBuffer(sig->returns(), WasmFXArgBufferCallback([&](size_t index, int offset) {
       DCHECK_EQ(returns[index].type, sig->GetReturn(index));
       returns[index].op = this->Asm().LoadOffHeap(
           arg_buffer, offset,
           MemoryRepresentationOffHeap(sig->GetReturn(index)));
-    });
+    }));
   }
 
   void AtomicNotify(FullDecoder* decoder, const MemoryAccessImmediate& imm,

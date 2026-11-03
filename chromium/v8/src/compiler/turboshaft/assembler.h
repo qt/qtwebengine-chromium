@@ -3760,7 +3760,7 @@ class AssemblerOpInterface : public Next {
   template <typename Desc>
     requires(!Desc::kNeedsContext && !Desc::kCanTriggerLazyDeopt)
   detail::index_type_for_t<typename Desc::returns_t> CallBuiltin(
-      const Desc::Arguments& args) {
+      const typename Desc::Arguments& args) {
     using result_t = detail::index_type_for_t<typename Desc::returns_t>;
     if (V8_UNLIKELY(Asm().generating_unreachable_operations())) {
       return result_t::Invalid();
@@ -3779,7 +3779,7 @@ class AssemblerOpInterface : public Next {
   template <typename Desc>
     requires(Desc::kNeedsContext && !Desc::kCanTriggerLazyDeopt)
   detail::index_type_for_t<typename Desc::returns_t> CallBuiltin(
-      V<Context> context, const Desc::Arguments& args) {
+      V<Context> context, const typename Desc::Arguments& args) {
     using result_t = detail::index_type_for_t<typename Desc::returns_t>;
     if (V8_UNLIKELY(Asm().generating_unreachable_operations())) {
       return result_t::Invalid();
@@ -3801,7 +3801,7 @@ class AssemblerOpInterface : public Next {
     requires(!Desc::kNeedsContext && Desc::kCanTriggerLazyDeopt)
   detail::index_type_for_t<typename Desc::returns_t> CallBuiltin(
       OptionalV<turboshaft::FrameState> frame_state,
-      const Desc::Arguments& args,
+      const typename Desc::Arguments& args,
       LazyDeoptOnThrow lazy_deopt_on_throw = LazyDeoptOnThrow::kNo) {
     using result_t = detail::index_type_for_t<typename Desc::returns_t>;
     if (V8_UNLIKELY(Asm().generating_unreachable_operations())) {
@@ -3825,7 +3825,7 @@ class AssemblerOpInterface : public Next {
     requires(Desc::kNeedsContext && Desc::kCanTriggerLazyDeopt)
   detail::index_type_for_t<typename Desc::returns_t> CallBuiltin(
       OptionalV<turboshaft::FrameState> frame_state, V<Context> context,
-      const Desc::Arguments& args,
+      const typename Desc::Arguments& args,
       LazyDeoptOnThrow lazy_deopt_on_throw = LazyDeoptOnThrow::kNo) {
     using result_t = detail::index_type_for_t<typename Desc::returns_t>;
     if (V8_UNLIKELY(Asm().generating_unreachable_operations())) {
@@ -3899,7 +3899,7 @@ class AssemblerOpInterface : public Next {
   template <typename Desc>
   typename Desc::returns_t CallRuntimeImpl(
       OptionalV<turboshaft::FrameState> frame_state, V<Context> context,
-      const Desc::Arguments& args, LazyDeoptOnThrow lazy_deopt_on_throw) {
+      const typename Desc::Arguments& args, LazyDeoptOnThrow lazy_deopt_on_throw) {
     using returns_t = typename Desc::returns_t;
     if (V8_UNLIKELY(Asm().generating_unreachable_operations())) {
       return returns_t::Invalid();
@@ -3934,7 +3934,7 @@ class AssemblerOpInterface : public Next {
     requires(Desc::kCanTriggerLazyDeopt)
   typename Desc::returns_t CallRuntime(
       OptionalV<turboshaft::FrameState> frame_state, V<Context> context,
-      const Desc::Arguments& args, LazyDeoptOnThrow lazy_deopt_on_throw) {
+      const typename Desc::Arguments& args, LazyDeoptOnThrow lazy_deopt_on_throw) {
     return CallRuntimeImpl<Desc>(frame_state, context, args,
                                  lazy_deopt_on_throw);
   }
@@ -3942,7 +3942,7 @@ class AssemblerOpInterface : public Next {
   template <typename Desc>
     requires(!Desc::kCanTriggerLazyDeopt)
   typename Desc::returns_t CallRuntime(V<Context> context,
-                                       const Desc::Arguments& args) {
+                                       const typename Desc::Arguments& args) {
     return CallRuntimeImpl<Desc>(OptionalV<turboshaft::FrameState>::Nullopt(),
                                  context, args, LazyDeoptOnThrow::kNo);
   }

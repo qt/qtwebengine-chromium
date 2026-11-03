@@ -2246,7 +2246,7 @@ void Heap::CollectGarbageWithRetry(AllocationSpace space, GCFlags gc_flags,
                                    GarbageCollectionReason gc_reason,
                                    const GCCallbackFlags gc_callback_flags) {
   std::ignore = allocator()->RetryCustomAllocate(
-      [&]() { return !ReachedHeapLimit(); },
+      v8::base::FunctionRef<bool()>([&]() { return !ReachedHeapLimit(); }),
       space == NEW_SPACE ? AllocationType::kYoung : AllocationType::kOld);
 }
 
@@ -2988,7 +2988,8 @@ void* Heap::AllocateExternalBackingStore(
     return result;
   }
   std::ignore = allocator()->RetryCustomAllocate(
-      [&]() { return result = allocate(byte_length); }, AllocationType::kOld);
+      v8::base::FunctionRef<bool()>(
+      [&]() { return result = allocate(byte_length); }), AllocationType::kOld);
   return result;
 }
 

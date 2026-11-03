@@ -578,11 +578,11 @@ void WasmWrapperTSGraphBuilder<Assembler>::BuildWasmStackEntryWrapper() {
           -> template AllocateVector<OpIndex>(1 + sig_->parameter_count());
   args[0] = instance;
   // Unpack continuation params.
-  IterateWasmFXArgBuffer(sig_->parameters(), [&](size_t index, int offset) {
+  IterateWasmFXArgBuffer(sig_->parameters(), WasmFXArgBufferCallback([&](size_t index, int offset) {
     args[index + 1] = __ LoadOffHeap(arg_buffer, offset,
                                      MemoryRepresentation::FromMachineType(
                                          sig_->GetParam(index).machine_type()));
-  });
+  }));
 
   base::Vector<OpIndex> returns =
       __ phase_zone() -> template AllocateVector<OpIndex>(sig_->return_count());
@@ -594,7 +594,7 @@ void WasmWrapperTSGraphBuilder<Assembler>::BuildWasmStackEntryWrapper() {
   // until its use in the parent stack.
   OpIndex result_buffer =
       __ StackSlot(size, std::max(2 * kSystemPointerSize, alignment));
-  IterateWasmFXArgBuffer(sig_->returns(), [&](size_t index, int offset) {
+  IterateWasmFXArgBuffer(sig_->returns(), WasmFXArgBufferCallback([&](size_t index, int offset) {
     CanonicalValueType type = sig_->GetReturn(index);
     // On-stack refs are uncompressed.
     MemoryRepresentation rep =
@@ -602,7 +602,7 @@ void WasmWrapperTSGraphBuilder<Assembler>::BuildWasmStackEntryWrapper() {
             ? MemoryRepresentation::AnyUncompressedTagged()
             : MemoryRepresentation::FromMachineType(type.machine_type());
     __ StoreOffHeap(result_buffer, returns[index], rep, offset);
-  });
+  }));
 
   CallBuiltin<WasmFXReturnDescriptor>(Builtin::kWasmFXReturn,
                                       Operator::kNoProperties, result_buffer);

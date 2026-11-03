@@ -738,11 +738,12 @@ void RegExpMacroAssemblerX64::SkipUntilBitInTable(
     Label scalar;
     EmitSkipUntilBitInTableSimdHelper(
         cp_offset, advance_by, nibble_table_array, 0, &scalar,
+        base::FunctionRef<void(Register, Register)>(
         [&](Register index, Register callee_saved) {
           // No need to push callee_saved since we never fall through.
           __ addq(rdi, index);
           __ jmp(on_match);
-        });
+        }));
     Bind(&scalar);
   }
 
@@ -1068,6 +1069,7 @@ void RegExpMacroAssemblerX64::SkipUntilOneOfMasked3(
   EmitSkipUntilBitInTableSimdHelper(
       args.bc0_cp_offset, args.bc0_advance_by, args.bc0_nibble_table,
       max_on_match_lookahead, &scalar_fallback,
+      base::FunctionRef<void(Register, Register)>(
       [&](Register index, Register callee_saved) {
         // SkipUntilBitInTable has matched at offset `index`. Bounds checks
         // have ensured we can safely perform the below loads without checks.
@@ -1120,7 +1122,7 @@ void RegExpMacroAssemblerX64::SkipUntilOneOfMasked3(
         // Restore the previous current position before continuing.
         __ popq(callee_saved);
         __ popq(rdi);
-      });
+      }));
 
   Bind(&scalar_fallback);
   // TODO(jgruber): The fallback is only reached when close to the end of the

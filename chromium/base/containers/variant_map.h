@@ -53,6 +53,7 @@ BASE_EXPORT bool IsAbslFlatMapInVariantMapEnabled();
 // Initializes VariantMap features. See `base::features::Init()`.
 BASE_EXPORT void InitializeVariantMapFeatures();
 
+#if !defined(COMPILER_MSVC)
 // Class used to evaluate the performance of switching from std::map to
 // absl::flat_hash_map in place. This class is used exactly like the underlying
 // map implementation for the implemented subset of operations. Constructing can
@@ -314,6 +315,50 @@ class VariantMap {
   // The variant that holds one of the two map types.
   Map data_;
 };
+#else
+template <typename Key, typename Value>
+class VariantMap : public std::map<Key, Value> {
+ public:
+  VariantMap() = default;
+
+  // Protected by PassKey because not intended for general use but only
+  // experimenting.
+  template <typename ContextType>
+  explicit VariantMap(
+      base::PassKey<mojo::BinderMapWithContext<ContextType>> passkey)
+      : VariantMap() {}
+
+  template <typename ReceiverType, typename ContextType>
+  explicit VariantMap(
+      base::PassKey<mojo::ReceiverSetBase<ReceiverType, ContextType>> passkey)
+      : VariantMap() {}
+
+  explicit VariantMap(base::PassKey<metrics::SubprocessMetricsProvider> passkey)
+      : VariantMap() {}
+
+  explicit VariantMap(base::PassKey<mojo::ReceiverSetState> passkey)
+      : VariantMap() {}
+
+  explicit VariantMap(
+      base::PassKey<resource_attribution::CPUMeasurementMonitor> passkey)
+      : VariantMap() {}
+
+  explicit VariantMap(
+      base::PassKey<resource_attribution::FakeMemoryMeasurementDelegateFactory>
+          passkey)
+      : VariantMap() {}
+
+  explicit VariantMap(
+      base::PassKey<resource_attribution::MemoryMeasurementDelegate> passkey)
+      : VariantMap() {}
+
+  explicit VariantMap(
+      base::PassKey<resource_attribution::QueryResultMap> passkey)
+      : VariantMap() {}
+
+  using std::map<Key, Value>::map;
+};
+#endif  // !defined(COMPILER_MSVC)
 
 }  // namespace base
 

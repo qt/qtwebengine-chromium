@@ -134,8 +134,10 @@ ScrollJankV4FrameStage::List CalculateStagesImpl(
               }},
           stages[0].stage);
     }();
+#if !defined(COMPILER_MSVC)
     UMA_HISTOGRAM_ENUMERATION("Event.ScrollJank.FrameStageCalculationResult",
                               result);
+#endif
   };
 
   // We expect that `events_metrics` contains:

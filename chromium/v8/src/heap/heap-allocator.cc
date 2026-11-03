@@ -212,10 +212,10 @@ Tagged<HeapObject> HeapAllocator::AllocateRawSlowPath(
   };
 
   if (retry_mode == AllocationRetryMode::kLightRetry) {
-    RetryCustomAllocateLight(allocate, allocation);
+    RetryCustomAllocateLight(v8::base::FunctionRef<bool()>(allocate), allocation);
   } else {
     DCHECK_EQ(retry_mode, AllocationRetryMode::kRetryOrFail);
-    RetryCustomAllocateOrFail(allocate, allocation);
+    RetryCustomAllocateOrFail(v8::base::FunctionRef<bool()>(allocate), allocation);
   }
 
   Tagged<HeapObject> object;

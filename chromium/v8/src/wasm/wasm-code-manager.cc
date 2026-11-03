@@ -2588,10 +2588,11 @@ std::shared_ptr<NativeModule> WasmCodeManager::NewNativeModule(
     if (!code_space.IsReserved() && GetCurrentIsolateForGc()) {
       Isolate* isolate_for_gc = GetCurrentIsolateForGc();
       isolate_for_gc->heap()->allocator()->RetryCustomAllocate(
+          v8::base::FunctionRef<bool()>(
           [&]() {
             code_space = TryAllocate(code_vmem_size);
             return code_space.IsReserved();
-          },
+          }),
           internal::AllocationType::kOld);
     }
     if (!code_space.IsReserved()) {

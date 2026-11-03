@@ -210,8 +210,10 @@ void* ObjectAllocator::OutOfLineAllocateImpl(NormalPageSpace& space,
 
   bool success = TryRefillLinearAllocationBuffer(space, request_size);
   if (!success) {
-    success = garbage_collector_.RetryAllocate(
-        [&]() { return TryRefillLinearAllocationBuffer(space, request_size); });
+    auto retry = [&]() {
+      return TryRefillLinearAllocationBuffer(space, request_size);
+    };
+    success = garbage_collector_.RetryAllocate(v8::base::FunctionRef<bool()>(retry));
   }
   if (!success) {
 #if defined(CPPGC_CAGED_HEAP)

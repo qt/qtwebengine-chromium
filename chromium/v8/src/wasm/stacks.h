@@ -329,9 +329,9 @@ int IterateWasmFXArgBuffer(base::Vector<const T> types,
 template <typename T>
 std::pair<int, int> GetBufferSizeAndAlignmentFor(base::Vector<const T> types) {
   int alignment = kSystemPointerSize;
-  int size = IterateWasmFXArgBuffer(types, [&](size_t index, int offset) {
+  int size = IterateWasmFXArgBuffer(types, WasmFXArgBufferCallback([&](size_t index, int offset) {
     alignment = std::max(alignment, types[index].value_kind_full_size());
-  });
+  }));
   return {size, alignment};
 }
 

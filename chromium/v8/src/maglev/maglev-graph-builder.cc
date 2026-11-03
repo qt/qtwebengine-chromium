@@ -7871,7 +7871,7 @@ ReduceResult MaglevGraphBuilder::VisitSetKeyedProperty() {
 
   return BuildSetKeyedProperty(object, key, compiler::AccessMode::kStore,
                                feedback_source, processed_feedback,
-                               build_generic_access);
+                               v8::base::FunctionRef<ReduceResult()>(build_generic_access));
 }
 
 ReduceResult MaglevGraphBuilder::VisitDefineKeyedOwnProperty() {
@@ -7895,7 +7895,7 @@ ReduceResult MaglevGraphBuilder::VisitDefineKeyedOwnProperty() {
 
   return BuildSetKeyedProperty(object, key, compiler::AccessMode::kDefine,
                                feedback_source, processed_feedback,
-                               build_generic_access);
+                               v8::base::FunctionRef<ReduceResult()>(build_generic_access));
 }
 
 ReduceResult MaglevGraphBuilder::VisitStaInArrayLiteral() {

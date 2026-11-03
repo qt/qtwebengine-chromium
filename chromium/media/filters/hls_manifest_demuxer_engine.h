@@ -127,13 +127,13 @@ class MEDIA_EXPORT HlsManifestDemuxerEngine : public ManifestDemuxer::Engine,
   template <typename Response,
             typename CB = base::OnceCallback<void(Response)>,
             typename Thunk = base::OnceCallback<void(CB)>>
-  void ProcessAsyncAction(CB cb, Thunk thunk) {
+  void ProcessAsyncAction(CB&& cb, Thunk&& thunk) {
     DCHECK_CALLED_ON_VALID_SEQUENCE(media_sequence_checker_);
     // Capture both `thunk` and `cb` in a closure, which can be added to the
     // queue. This allows effectively erasing the `Response` type and storing
     // multiple different types of bound actions.
     base::OnceCallback<void(base::OnceClosure)> action = base::BindOnce(
-        [](Thunk thunk, CB cb, base::OnceClosure finished) {
+        [](Thunk&& thunk, CB&& cb, base::OnceClosure finished) {
           // When this action is processed, we call the action callback `thunk`
           // and pass it a new bound callback with the same type as `cb` that
           // can also advance the queue after `cb` has been executed.

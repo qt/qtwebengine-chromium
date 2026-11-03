@@ -103,13 +103,19 @@ StackMemory::StackSegment::~StackSegment() {
 void StackMemory::Iterate(v8::internal::RootVisitor* v, Isolate* isolate,
                           ThreadLocalTop* thread) {
   if (has_frames()) {
-    StackFrameIterator it =
-        IsActive() ? StackFrameIterator(isolate, thread,
-                                        StackFrameIterator::FirstStackOnly{})
-                   : StackFrameIterator(isolate, this);
-    for (; !it.done(); it.Advance()) {
-      it.frame()->Iterate(v);
+    if (IsActive()) {
+      StackFrameIterator it(StackFrameIterator(isolate, thread,
+                                               StackFrameIterator::FirstStackOnly{}));
+      for (; !it.done(); it.Advance()) {
+        it.frame()->Iterate(v);
+      }
+    } else {
+      StackFrameIterator it(StackFrameIterator(isolate, this));
+      for (; !it.done(); it.Advance()) {
+        it.frame()->Iterate(v);
+      }
     }
+
   }
   if (v8_flags.experimental_wasm_wasmfx) {
     v->VisitRootPointer(
@@ -117,14 +123,14 @@ void StackMemory::Iterate(v8::internal::RootVisitor* v, Isolate* isolate,
         FullObjectSlot(reinterpret_cast<Address>(&current_cont_)));
     v->VisitRootPointer(Root::kStackRoots, nullptr,
                         FullObjectSlot(reinterpret_cast<Address>(&func_ref_)));
-    IterateWasmFXArgBuffer(param_types_, [this, v](size_t index, int offset) {
+    IterateWasmFXArgBuffer(param_types_, WasmFXArgBufferCallback([this, v](size_t index, int offset) {
       if (static_cast<int>(index) < num_bound_args_ &&
           param_types_[index].is_ref()) {
         v->VisitRootPointer(Root::kStackRoots, "wasm cont ref bound argument",
                             FullObjectSlot((Address)(
                                 this->arg_buffer_ + offset)));
       }
-    });
+    }));
   }
 }
 

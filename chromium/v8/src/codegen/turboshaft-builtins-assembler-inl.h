@@ -745,14 +745,14 @@ class BuiltinsReducer : public Next {
   template <typename Desc>
     requires(!Desc::kCanTriggerLazyDeopt)
   auto CallRuntime(compiler::turboshaft::V<Context> context,
-                   const Desc::Arguments& args) {
+                   const typename Desc::Arguments& args) {
     return Next::template CallRuntime<Desc>(context, args);
   }
 
   template <typename Desc>
     requires(Desc::kCanTriggerLazyDeopt)
   auto CallRuntime(compiler::turboshaft::V<Context> context,
-                   const Desc::Arguments& args) {
+                   const typename Desc::Arguments& args) {
     return Next::template CallRuntime<Desc>(
         compiler::turboshaft::OptionalV<
             compiler::turboshaft::FrameState>::Nullopt(),
@@ -762,20 +762,20 @@ class BuiltinsReducer : public Next {
   template <typename Desc>
     requires(Desc::kNeedsContext && !Desc::kCanTriggerLazyDeopt)
   auto CallBuiltin(compiler::turboshaft::V<Context> context,
-                   const Desc::Arguments& args) {
+                   const typename Desc::Arguments& args) {
     return Next::template CallBuiltin<Desc>(context, args);
   }
 
   template <typename Desc>
     requires(!Desc::kNeedsContext && !Desc::kCanTriggerLazyDeopt)
-  auto CallBuiltin(const Desc::Arguments& args) {
+  auto CallBuiltin(const typename Desc::Arguments& args) {
     return Next::template CallBuiltin<Desc>(args);
   }
 
   template <typename Desc>
     requires(Desc::kNeedsContext && Desc::kCanTriggerLazyDeopt)
   auto CallBuiltin(compiler::turboshaft::V<Context> context,
-                   const Desc::Arguments& args) {
+                   const typename Desc::Arguments& args) {
     return Next::template CallBuiltin<Desc>(
         compiler::turboshaft::OptionalV<
             compiler::turboshaft::FrameState>::Nullopt(),
@@ -784,7 +784,7 @@ class BuiltinsReducer : public Next {
 
   template <typename Desc>
     requires(!Desc::kNeedsContext && Desc::kCanTriggerLazyDeopt)
-  auto CallBuiltin(const Desc::Arguments& args) {
+  auto CallBuiltin(const typename Desc::Arguments& args) {
     return Next::template CallBuiltin<Desc>(
         compiler::turboshaft::OptionalV<
             compiler::turboshaft::FrameState>::Nullopt(),
