@@ -17,6 +17,10 @@ if (host_os == "win") {
 }
 
 _rustfmt_path = "${rust_bindgen_root}/bin/rustfmt"
+if (!path_exists(_rustfmt_path)) {
+  _rustfmt_path = "${rust_sysroot_absolute}/bin/rustfmt"
+}
+
 if (!use_chromium_rust_toolchain &&
     (host_cpu == "ppc64" || host_cpu == "s390x")) {
   _rustfmt_path = rust_sysroot_absolute + "/bin/rustfmt"
