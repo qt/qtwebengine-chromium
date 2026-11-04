@@ -26,6 +26,7 @@
 #include "gpu/command_buffer/service/skia_utils.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
+#include "third_party/microsoft_dxheaders/src/include/composition/dcomp-preview.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
@@ -59,7 +60,7 @@ OutputSurface::DCSupportLevel GetDcSupportLevel() {
     Microsoft::WRL::ComPtr<IDCompositionDevice3> dcomp_device =
         gl::GetDirectCompositionDevice();
 
-    if (Microsoft::WRL::ComPtr<IDCompositionDevice5> dcomp_device5;
+    if (Microsoft::WRL::ComPtr<PREVIEW_IDCompositionDevice5> dcomp_device5;
         SUCCEEDED(dcomp_device.As(&dcomp_device5))) {
       return OutputSurface::DCSupportLevel::kDCompDynamicTexture;
     }
