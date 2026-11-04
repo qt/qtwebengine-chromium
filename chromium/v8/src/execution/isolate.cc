@@ -4956,9 +4956,23 @@ void Isolate::NotifyExceptionPropagationCallback() {
     // "C++ -> JS" or "C++ -> Api callback" boundary.
     return;
   }
-  if (it.done() ||
-      (ext_callback_scope &&
-       ext_callback_scope->JSStackComparableAddress() < it.frame()->fp())) {
+  bool is_direct_api_throw = it.done();
+  if (!is_direct_api_throw && ext_callback_scope != nullptr) {
+    Address comparable_fp = it.frame()->fp();
+#if V8_ENABLE_WEBASSEMBLY
+    if (!IsOnCentralStack(comparable_fp)) {
+      // The topmost frame is on a Wasm secondary stack, whereas
+      // |ext_callback_scope| is always on the central stack. Compare against
+      // the central-stack SP saved when switching to the secondary stack.
+      comparable_fp = thread_local_top()->central_stack_sp_;
+      DCHECK_NE(comparable_fp, kNullAddress);
+      DCHECK(IsOnCentralStack(comparable_fp));
+    }
+#endif  // V8_ENABLE_WEBASSEMBLY
+    is_direct_api_throw =
+        ext_callback_scope->JSStackComparableAddress() < comparable_fp;
+  }
+  if (is_direct_api_throw) {
     // There were no crossings of "C++ -> JS" boundary at all or they happened
     // earlier than the last crossing of the  "C++ -> Api callback" boundary.
     // In this case all the data about Api callback is available in the
@@ -5069,6 +5083,9 @@ void Isolate::NotifyExceptionPropagationCallback() {
       return;
     }
     case StackFrame::TURBOFAN_JS:
+#if V8_ENABLE_WEBASSEMBLY
+    case StackFrame::WASM_TO_JS:
+#endif  // V8_ENABLE_WEBASSEMBLY
       // This must be a fast Api call.
       CHECK(it.frame()->InFastCCall());
       // TODO(ishell): support fast Api calls.
@@ -5080,6 +5097,7 @@ void Isolate::NotifyExceptionPropagationCallback() {
 #if V8_ENABLE_WEBASSEMBLY
     case StackFrame::WASM:
     case StackFrame::WASM_SEGMENT_START:
+    case StackFrame::WASM_EXIT:
       // No more info.
       return;
 #endif  // V8_ENABLE_WEBASSEMBLY
