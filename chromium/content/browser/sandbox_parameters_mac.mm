@@ -40,6 +40,11 @@ namespace content {
 base::FilePath getSandboxPath();
 #endif
 
+// If enabled, allows the network process to create symlinks.
+BASE_FEATURE(kMacSandboxAllowNetworkSymlinkCreation,
+             "MacSandboxAllowNetworkSymlinkCreation",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 namespace {
 
 std::optional<base::FilePath>& GetNetworkTestCertsDirectory() {
@@ -179,6 +184,10 @@ void SetupNetworkSandboxParameters(sandbox::SandboxSerializer* serializer,
         sandbox::policy::GetCanonicalPath(*GetNetworkTestCertsDirectory())
             .value()));
   }
+
+  CHECK(serializer->SetBooleanParameter(
+      sandbox::policy::kParamAllowNetworkSymlinkCreation,
+      base::FeatureList::IsEnabled(kMacSandboxAllowNetworkSymlinkCreation)));
 }
 
 bool SetupGpuSandboxParameters(sandbox::SandboxSerializer* serializer,
