@@ -29,6 +29,18 @@ archs_mapping = {
     }
   }
 
+  android = {
+    arm64 = {
+      clang_arch = "arm64"
+      dsym_arch = "aarch64"
+    }
+
+    x64 = {
+      clang_arch = "x86_64"
+      dsym_arch = "x86_64"
+    }
+  }
+
   mac = {
     arm64 = {
       clang_arch = "arm64"

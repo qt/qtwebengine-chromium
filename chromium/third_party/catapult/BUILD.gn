@@ -41,7 +41,7 @@ group("telemetry_chrome_test_support") {
   ]
 
   data_deps += [
-    "devil",
+#    "devil",
     "telemetry",
   ]
 

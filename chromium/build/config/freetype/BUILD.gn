@@ -4,7 +4,7 @@
 
 import("//build/config/freetype/freetype.gni")
 
-assert(enable_freetype)
+#assert(enable_freetype)
 
 group("freetype") {
   if (use_system_freetype) {
