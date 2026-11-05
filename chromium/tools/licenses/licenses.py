@@ -355,6 +355,14 @@ SPECIAL_CASES = {
         "License": "Apache 2.0",
         "License File": ["//third_party/sample3/the_license"],
     },
+    # For Qt WebEngine's SBOM:
+    os.path.join('third_party', 'perfetto', 'protos', 'third_party', 'pprof'): {
+        "Name": "pprof",
+        "URL": "https://github.com/google/pprof",
+        "Shipped": "yes",
+        "License": "Apache 2.0",
+        "License File": ["//third_party/perfetto/LICENSE"],
+    },
 }
 
 # These buildtools/third_party directories only contain
