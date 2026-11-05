@@ -359,14 +359,12 @@ GpuInit::GpuInit() = default;
 
 GpuInit::~GpuInit() {
 #if BUILDFLAG(IS_WIN)
-  if (gl::GetGLImplementation() != gl::kGLImplementationDisabled) {
-    auto *gl_display = gl::init::GetOrInitializeGLOneOffPlatformImplementation(
-        false, false, false, gl::GpuPreference::kDefault);
-    if (gl_display) {
+  if (gl::GetGLImplementation() == gl::kGLImplementationEGLANGLE) {
+    gl::GLDisplay* gl_display = gl::GetDefaultDisplay();
+    if (gl_display->IsInitialized())
       gl::init::ShutdownGL(gl_display, false);
-    }
   }
-#endif // BUILDFLAG(IS_WIN)
+#endif  // BUILDFLAG(IS_WIN)
 
   StopForceDiscreteGPU();
 }
