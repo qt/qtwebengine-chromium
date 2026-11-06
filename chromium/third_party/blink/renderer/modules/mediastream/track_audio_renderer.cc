@@ -207,7 +207,7 @@ TrackAudioRenderer::TrackAudioRenderer(
 
 TrackAudioRenderer::~TrackAudioRenderer() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK(!sink_);
+  Stop();
   DVLOG(1) << "TrackAudioRenderer::~TrackAudioRenderer()";
 }
 
