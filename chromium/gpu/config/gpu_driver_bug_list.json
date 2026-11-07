@@ -3885,6 +3885,19 @@
       "features": [
         "round_up_3d_texture_size_to_pot_for_limit"
       ]
+    },
+    {
+      "id": 503,
+      "cr_bugs": [550525698, 550996500, 552550589, 555394151, 558111285],
+      "description": "Readbacks interrupted by a GPU reset can complete without error on Mali and deliver unwritten memory; check the reset status before delivering readback results",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali-G.*",
+      "features": [
+        "check_graphics_reset_status_after_readback"
+      ]
     }
   ]
 }
