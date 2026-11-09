@@ -226,6 +226,16 @@ static int fts5HighlightCb(
   return rc;
 }
 
+/*
+** Return the integer value of pVal, clamped to the range [-1, 0x7FFFFFFF].
+** This is used for the column-number arguments of auxiliary functions,
+** so that 64-bit values that are too large or too small to fit in a
+** 32-bit signed integer are not truncated to what might be a valid
+** column number.
+*/
+static int fts5ValueClampedInt(sqlite3_value *pVal){
+  return (int)MIN(MAX(sqlite3_value_int64(pVal), -1), 0x7FFFFFFF);
+}
 
 /*
 ** Implementation of highlight() function.
@@ -247,7 +257,7 @@ static void fts5HighlightFunction(
     return;
   }
 
-  iCol = sqlite3_value_int(apVal[0]);
+  iCol = fts5ValueClampedInt(apVal[0]);
   memset(&ctx, 0, sizeof(HighlightContext));
   ctx.zOpen = (const char*)sqlite3_value_text(apVal[1]);
   ctx.zClose = (const char*)sqlite3_value_text(apVal[2]);
@@ -426,7 +436,7 @@ static void fts5SnippetFunction(
   int rc = SQLITE_OK;             /* Return code */
   int iCol;                       /* 1st argument to snippet() */
   const char *zEllips;            /* 4th argument to snippet() */
-  int nToken;                     /* 5th argument to snippet() */
+  i64 nToken;                     /* 5th argument to snippet() */
   int nInst = 0;                  /* Number of instance matches this row */
   int i;                          /* Used to iterate through instances */
   int nPhrase;                    /* Number of phrases in query */
@@ -446,12 +456,12 @@ static void fts5SnippetFunction(
 
   nCol = pApi->xColumnCount(pFts);
   memset(&ctx, 0, sizeof(HighlightContext));
-  iCol = sqlite3_value_int(apVal[0]);
+  iCol = fts5ValueClampedInt(apVal[0]);
   ctx.zOpen = fts5ValueToText(apVal[1]);
   ctx.zClose = fts5ValueToText(apVal[2]);
   ctx.iRangeEnd = -1;
   zEllips = fts5ValueToText(apVal[3]);
-  nToken = sqlite3_value_int(apVal[4]);
+  nToken = (int)(MIN( MAX(sqlite3_value_int64(apVal[4]), 0), 64));
 
   iBestCol = (iCol>=0 ? iCol : 0);
   nPhrase = pApi->xPhraseCount(pFts);
@@ -778,7 +788,7 @@ static void fts5GetLocaleFunction(
     return;
   }
 
-  iCol = sqlite3_value_int(apVal[0]);
+  iCol = fts5ValueClampedInt(apVal[0]);
   if( iCol<0 || iCol>=pApi->xColumnCount(pFts) ){
     sqlite3_result_error_code(pCtx, SQLITE_RANGE);
     return;
