@@ -238,9 +238,13 @@ void sqlite3TreeViewSrcList(TreeView *pView, const SrcList *pSrc){
     n = 0;
     if( pItem->fg.isSubquery ) n++;
     if( pItem->fg.isTabFunc ) n++;
-    if( pItem->fg.isUsing ) n++;
+    if( pItem->fg.isUsing || pItem->u3.pOn!=0 ) n++;
     if( pItem->fg.isUsing ){
       sqlite3TreeViewIdList(pView, pItem->u3.pUsing, (--n)>0, "USING");
+    }else if( pItem->u3.pOn!=0 ){
+      sqlite3TreeViewItem(pView, "ON", (--n)>0);
+      sqlite3TreeViewExpr(pView, pItem->u3.pOn, 0);
+      sqlite3TreeViewPop(&pView);
     }
     if( pItem->fg.isSubquery ){
       assert( n==1 );
@@ -605,6 +609,10 @@ void sqlite3TreeViewExpr(TreeView *pView, const Expr *pExpr, u8 moreToFollow){
     case TK_ID: {
       assert( !ExprHasProperty(pExpr, EP_IntValue) );
       sqlite3TreeViewLine(pView,"ID \"%w\"", pExpr->u.zToken);
+      break;
+    }
+    case TK_ASTERISK: {
+      sqlite3TreeViewLine(pView,"ASKTERISK");
       break;
     }
 #ifndef SQLITE_OMIT_CAST
@@ -1296,7 +1304,13 @@ void sqlite3TreeViewTrigger(
 void sqlite3ShowExpr(const Expr *p){ sqlite3TreeViewExpr(0,p,0); }
 void sqlite3ShowExprList(const ExprList *p){ sqlite3TreeViewExprList(0,p,0,0);}
 void sqlite3ShowIdList(const IdList *p){ sqlite3TreeViewIdList(0,p,0,0); }
-void sqlite3ShowSrcList(const SrcList *p){ sqlite3TreeViewSrcList(0,p); }
+void sqlite3ShowSrcList(const SrcList *p){
+  TreeView *pView = 0;
+  sqlite3TreeViewPush(&pView, 0);
+  sqlite3TreeViewLine(pView, "SRCLIST");
+  sqlite3TreeViewSrcList(pView,p);
+  sqlite3TreeViewPop(&pView);
+}
 void sqlite3ShowSelect(const Select *p){ sqlite3TreeViewSelect(0,p,0); }
 void sqlite3ShowWith(const With *p){ sqlite3TreeViewWith(0,p,0); }
 void sqlite3ShowUpsert(const Upsert *p){ sqlite3TreeViewUpsert(0,p,0); }

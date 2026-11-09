@@ -220,6 +220,7 @@ set cdecllist {
   sqlite3_log
   sqlite3_mprintf
   sqlite3_snprintf
+  sqlite3_str_appendf
   sqlite3_test_control
   sqlite3_vtab_config
 }
@@ -491,6 +492,7 @@ set flist {
    sqlite3rbu.c
    dbstat.c
    dbpage.c
+   carray.c
    sqlite3session.c
    fts5.c
    stmt.c

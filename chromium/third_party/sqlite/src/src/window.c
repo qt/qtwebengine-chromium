@@ -222,7 +222,7 @@ static void nth_valueStepFunc(
         break;
       case SQLITE_FLOAT: {
         double fVal = sqlite3_value_double(apArg[1]);
-        if( ((i64)fVal)!=fVal ) goto error_out;
+        if( sqlite3RealToI64(fVal)!=fVal ) goto error_out;
         iVal = (i64)fVal;
         break;
       }
@@ -347,6 +347,7 @@ static void percent_rankInvFunc(
   UNUSED_PARAMETER(nArg); assert( nArg==0 );
   UNUSED_PARAMETER(apArg);
   p = (struct CallCount*)sqlite3_aggregate_context(pCtx, sizeof(*p));
+  assert( p!=0 );
   p->nStep++;
 }
 static void percent_rankValueFunc(sqlite3_context *pCtx){
@@ -392,6 +393,7 @@ static void cume_distInvFunc(
   UNUSED_PARAMETER(nArg); assert( nArg==0 );
   UNUSED_PARAMETER(apArg);
   p = (struct CallCount*)sqlite3_aggregate_context(pCtx, sizeof(*p));
+  assert( p!=0 );
   p->nStep++;
 }
 static void cume_distValueFunc(sqlite3_context *pCtx){
@@ -448,6 +450,7 @@ static void ntileInvFunc(
   assert( nArg==1 ); UNUSED_PARAMETER(nArg);
   UNUSED_PARAMETER(apArg);
   p = (struct NtileCtx*)sqlite3_aggregate_context(pCtx, sizeof(*p));
+  assert( p!=0 );
   p->iRow++;
 }
 static void ntileValueFunc(sqlite3_context *pCtx){
@@ -717,7 +720,7 @@ void sqlite3WindowUpdate(
           pWin->eEnd = aUp[i].eEnd;
           pWin->eExclude = 0;
           if( pWin->eStart==TK_FOLLOWING ){
-            pWin->pStart = sqlite3Expr(db, TK_INTEGER, "1");
+            pWin->pStart = sqlite3ExprInt32(db, 1);
           }
           break;
         }
@@ -805,7 +808,9 @@ static int selectWindowRewriteExprCb(Walker *pWalker, Expr *pExpr){
         p->pSub = sqlite3ExprListAppend(pParse, p->pSub, pDup);
       }
       if( p->pSub ){
-        int f = pExpr->flags & EP_Collate;
+        int f = pExpr->flags & (EP_Collate|EP_OuterON|EP_InnerON);
+        int iJoin = pExpr->w.iJoin;
+
         assert( ExprHasProperty(pExpr, EP_Static)==0 );
         ExprSetProperty(pExpr, EP_Static);
         sqlite3ExprDelete(pParse->db, pExpr);
@@ -817,6 +822,7 @@ static int selectWindowRewriteExprCb(Walker *pWalker, Expr *pExpr){
         pExpr->iTable = p->pWin->iEphCsr;
         pExpr->y.pTab = p->pTab;
         pExpr->flags = f;
+        if( (f & (EP_OuterON|EP_InnerON)) ) pExpr->w.iJoin = iJoin;
       }
       if( pParse->db->mallocFailed ) return WRC_Abort;
       break;
@@ -909,7 +915,7 @@ static ExprList *exprListAppendList(
         int iDummy;
         Expr *pSub;
         pSub = sqlite3ExprSkipCollateAndLikely(pDup);
-        if( sqlite3ExprIsInteger(pSub, &iDummy, 0) ){
+        if( sqlite3ExprIsInteger(pSub, &iDummy, 0, 0) ){
           pSub->op = TK_NULL;
           pSub->flags &= ~(EP_IntValue|EP_IsTrue|EP_IsFalse);
           pSub->u.zToken = 0;
@@ -1062,9 +1068,7 @@ int sqlite3WindowRewrite(Parse *pParse, Select *p){
     ** keep everything legal in this case.
     */
     if( pSublist==0 ){
-      pSublist = sqlite3ExprListAppend(pParse, 0,
-        sqlite3Expr(db, TK_INTEGER, "0")
-      );
+      pSublist = sqlite3ExprListAppend(pParse, 0, sqlite3ExprInt32(db, 0));
     }
 
     pSub = sqlite3SelectNew(
@@ -2553,7 +2557,7 @@ static int windowExprGtZero(Parse *pParse, Expr *pExpr){
 **
 **   ROWS BETWEEN <expr1> FOLLOWING AND <expr2> FOLLOWING
 **
-**     ... loop started by sqlite3WhereBegin() ...
+**   ... loop started by sqlite3WhereBegin() ...
 **     if( new partition ){
 **       Gosub flush
 **     }
@@ -3071,6 +3075,12 @@ void sqlite3WindowCodeStep(
       addrBreak2 = windowCodeOp(&s, WINDOW_AGGINVERSE, 0, 1);
     }else{
       assert( pMWin->eEnd==TK_FOLLOWING );
+      /* assert( regStart>=0 );
+      ** regEnd = regEnd - regStart;
+      ** regStart = 0;   */ 
+      sqlite3VdbeAddOp3(v, OP_Subtract, regStart, regEnd, regEnd);
+      sqlite3VdbeAddOp2(v, OP_Integer, 0, regStart);
+
       addrStart = sqlite3VdbeCurrentAddr(v);
       addrBreak1 = windowCodeOp(&s, WINDOW_RETURN_ROW, regEnd, 1);
       addrBreak2 = windowCodeOp(&s, WINDOW_AGGINVERSE, regStart, 1);
