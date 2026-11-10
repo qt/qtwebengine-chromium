@@ -6280,7 +6280,18 @@ v8_source_set("v8_base_without_compiler") {
 
   jumbo_excluded_sources = [
     "src/runtime/runtime-test.cc",
+    "src/regexp/regexp-compiler-tonode.cc",
+    "src/regexp/regexp-compiler.cc",
+    "src/regexp/regexp.cc",
   ]
+
+  if (v8_enable_regexp_diagnostics) {
+    jumbo_excluded_sources += [
+      "src/regexp/regexp-dotprinter.cc",
+      "src/regexp/regexp-graph-printer.cc",
+      "src/regexp/regexp-node-printer.cc",
+    ]
+  }
 
   if (v8_enable_maglev) {
     sources += [
@@ -6534,6 +6545,10 @@ v8_source_set("v8_base_without_compiler") {
         ]
       }
     }
+
+    jumbo_excluded_sources += [
+      "src/regexp/x64/regexp-macro-assembler-x64.cc",
+    ]
   } else if (v8_current_cpu == "arm") {
     sources += [
       ### gcmole(arm) ###
@@ -6597,6 +6612,7 @@ v8_source_set("v8_base_without_compiler") {
       # TODO(mostynb@vewd.com): fix this code so it doesn't need
       # to be excluded, see the comments inside.
       "src/codegen/arm64/instructions-arm64-constants.cc",
+      "src/regexp/arm64/regexp-macro-assembler-arm64.cc",
     ]
   } else if (v8_current_cpu == "mips64" || v8_current_cpu == "mips64el") {
     sources += [
