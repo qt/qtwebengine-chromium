@@ -11,7 +11,7 @@
 
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
-#include "chrome/common/url_constants.h"
+#include "chrome/common/url_constants.h"  // nogncheck
 #include "components/guest_view/browser/guest_view_base.h"
 #include "components/url_formatter/url_fixer.h"
 #include "content/public/browser/navigation_controller.h"
