@@ -44,6 +44,7 @@ if (((is_linux && !is_castos) || is_chromeos) && !use_fuzzing_engine) {
   static_library("expat") {
     sources = [
       "src/expat/lib/expat.h",
+      "src/expat/lib/xcs.c",
       "src/expat/lib/xmlparse.c",
       "src/expat/lib/xmlrole.c",
       "src/expat/lib/xmltok.c",
