@@ -14,6 +14,9 @@ source_set("resources_private") {
 
   deps = [
     "//content/public/browser",
+    "//extensions/browser",
+    "//pdf:buildflags",
+    "//qtwebengine/common/extensions/api",
   ]
 
   if (enable_pdf) {
@@ -28,12 +31,22 @@ source_set("tabs") {
   ]
 
   deps = [
+    "//build:android_buildflags",
+    "//build:branding_buildflags",
     "//chrome/common:buildflags",
+    "//components/enterprise/buildflags",
+    "//components/signin/public/base:signin_buildflags",
     "//content/public/browser",
+    "//content/public/common",
+    "//media:media_buildflags",
+    "//net:buildflags",
+    "//printing/buildflags",
     "//extensions/browser",
     "//extensions/common",
     "//extensions/common:mojom",
     "//extensions/common/api",
+    "//qtwebengine/common/extensions/api",
+    "//components/guest_view/browser",
   ]
 }
 
@@ -45,7 +58,9 @@ source_set("webrtc_desktop_capture_private") {
 
   deps = [
     "//content/public/browser",
-  ]
+    "//extensions/browser",
+    "//qtwebengine/common/extensions/api",
+    ]
 }
 
 function_registration("api_registration") {
