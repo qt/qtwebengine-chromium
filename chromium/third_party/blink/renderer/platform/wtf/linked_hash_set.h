@@ -89,6 +89,7 @@ class LinkedHashSet {
   template <typename T>
   class IteratorWrapper {
    public:
+    using iterator_category = std::bidirectional_iterator_tag;
     using value_type = typename T::value_type;
     using size_type = typename T::size_type;
     using difference_type = typename T::difference_type;
