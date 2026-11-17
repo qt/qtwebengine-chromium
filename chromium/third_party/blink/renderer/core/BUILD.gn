@@ -478,19 +478,20 @@ jumbo_component("core") {
     "//third_party/blink/renderer/core/url_pattern",
     "//third_party/blink/renderer/core/xml:xpath_generated",
   ]
-  jumbo_excluded_sources = [ ]
-  jumbo_excluded_sources += rebase_path([ "css_primitive_value.cc" ], "", "css")
-  jumbo_excluded_sources += rebase_path([ "attribution_reporting_to_mojom.cc" ], "", "fetch")
-  jumbo_excluded_sources += rebase_path([ "attribution_src_loader.cc" ], "", "frame")
-  jumbo_excluded_sources += rebase_path([ "cached_permission_status.cc" ], "", "frame")
-  jumbo_excluded_sources += rebase_path([ "html_permission_element.cc" ], "", "html")
-  jumbo_excluded_sources += rebase_path([ "frame_fetch_context.cc" ], "", "loader")
-  jumbo_excluded_sources += rebase_path([ "image_loader.cc" ], "", "loader")
-  jumbo_excluded_sources += rebase_path([ "create_window.cc" ], "", "page")
-  jumbo_excluded_sources += rebase_path([ "link_highlight_impl.cc" ], "", "paint")
-  jumbo_excluded_sources += rebase_path([ "scroll_animator.cc" ], "", "scroll")
-  jumbo_excluded_sources += rebase_path([ "soft_navigation_heuristics.cc" ], "", "timing")
-  jumbo_excluded_sources += [ "//third_party/blink/renderer/bindings/core/v8/script_decoder.cc" ]
+  jumbo_excluded_sources = [
+    rebase_path([ "css_primitive_value.cc" ], "", "css"),
+    rebase_path([ "attribution_reporting_to_mojom.cc" ], "", "fetch"),
+    rebase_path([ "attribution_src_loader.cc" ], "", "frame"),
+    rebase_path([ "cached_permission_status.cc" ], "", "frame"),
+    rebase_path([ "html_permission_element.cc" ], "", "html"),
+    rebase_path([ "frame_fetch_context.cc" ], "", "loader"),
+    rebase_path([ "image_loader.cc" ], "", "loader"),
+    rebase_path([ "create_window.cc" ], "", "page"),
+    rebase_path([ "link_highlight_impl.cc" ], "", "paint"),
+    rebase_path([ "scroll_animator.cc" ], "", "scroll"),
+    rebase_path([ "soft_navigation_heuristics.cc" ], "", "timing"),
+    "//third_party/blink/renderer/bindings/core/v8/script_decoder.cc",
+  ]
 
   public_configs = [ ":core_include_dirs" ]
 
@@ -1397,6 +1398,12 @@ target("jumbo_" + core_generated_target_type, "core_generated") {
   foreach(current, targets_generating_sources) {
     sources += get_target_outputs(current)
   }
+
+  jumbo_excluded_sources = [
+    "$root_gen_dir/third_party/blink/renderer/core/css/properties/longhands.cc",
+    "$root_gen_dir/third_party/blink/renderer/core/style/computed_style_base.cc",
+  ]
+
   deps = [
     "//services/metrics/public/cpp:ukm_builders",
     "//third_party/blink/renderer/core/probe",
