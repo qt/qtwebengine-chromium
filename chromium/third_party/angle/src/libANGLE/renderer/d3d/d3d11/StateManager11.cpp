@@ -2164,8 +2164,10 @@ angle::Result StateManager11::syncCurrentValueAttribs(
     for (auto attribIndex : dirtyActiveAttribs)
     {
         if (vertexAttributes[attribIndex].enabled)
+        {
             mDirtyCurrentValueAttribs.reset(attribIndex);
             continue;
+        }
 
         const auto *attrib                      = &vertexAttributes[attribIndex];
         const auto &currentValue                = currentValues[attribIndex];
