@@ -955,6 +955,7 @@ def FindThirdPartyDeps(gn_binary : str,
     cmd = [
         gn_binary,
         "desc",
+        "--threads=1",
         "--ignore-asserts=enable_extensions_core,enable_extensions",
         "--script-executable=%s" % sys.executable,
         "--root=%s" % scan_root, tmp_dir, gn_target, "deps", "--as=buildfile",
