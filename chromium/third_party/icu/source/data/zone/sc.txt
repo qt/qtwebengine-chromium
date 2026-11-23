@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 sc{
     zoneStrings{
         "Africa:Addis_Ababa"{
@@ -21,20 +21,11 @@ sc{
         "Africa:Porto-Novo"{
             ec{"Portu-Nou"}
         }
-        "Africa:Sao_Tome"{
-            ec{"São Tomé"}
-        }
         "Africa:Tripoli"{
             ec{"Trìpoli"}
         }
         "Africa:Tunis"{
             ec{"Tùnisi"}
-        }
-        "America:Argentina:Tucuman"{
-            ec{"Tucumán"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
         }
         "America:Havana"{
             ec{"S’Avana"}
@@ -135,6 +126,9 @@ sc{
         "Asia:Tehran"{
             ec{"Teheràn"}
         }
+        "Asia:Tokyo"{
+            ec{"Tòkyo"}
+        }
         "Asia:Ulaanbaatar"{
             ec{"Ulàn Bator"}
         }
@@ -150,14 +144,14 @@ sc{
         "Atlantic:Faeroe"{
             ec{"Ìsulas Føroyar"}
         }
+        "Atlantic:Madeira"{
+            ec{"Madèira"}
+        }
         "Atlantic:South_Georgia"{
             ec{"Geòrgia de su Sud"}
         }
         "Atlantic:St_Helena"{
             ec{"Sant’Elene"}
-        }
-        "Australia:Currie"{
-            ec{"Currie"}
         }
         "Etc:UTC"{
             ls{"Tempus coordinadu universale"}
@@ -184,9 +178,6 @@ sc{
         "Europe:Budapest"{
             ec{"Bùdapest"}
         }
-        "Europe:Busingen"{
-            ec{"Büsingen"}
-        }
         "Europe:Dublin"{
             ec{"Dublinu"}
             ld{"Ora istandard irlandesa"}
@@ -200,8 +191,14 @@ sc{
         "Europe:Istanbul"{
             ec{"Ìstanbul"}
         }
+        "Europe:Kiev"{
+            ec{"Kiev"}
+        }
         "Europe:Lisbon"{
             ec{"Lisbona"}
+        }
+        "Europe:Ljubljana"{
+            ec{"Lubiana"}
         }
         "Europe:London"{
             ec{"Londra"}
@@ -209,6 +206,9 @@ sc{
         }
         "Europe:Luxembourg"{
             ec{"Lussemburgu"}
+        }
+        "Europe:Madrid"{
+            ec{"Madrìd"}
         }
         "Europe:Monaco"{
             ec{"Mònacu"}
@@ -231,11 +231,11 @@ sc{
         "Europe:Stockholm"{
             ec{"Istocolma"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Vatican"{
             ec{"Tzitade de su Vaticanu"}
+        }
+        "Europe:Vilnius"{
+            ec{"Vìlnius"}
         }
         "Europe:Warsaw"{
             ec{"Varsàvia"}
@@ -261,22 +261,20 @@ sc{
         "Indian:Reunion"{
             ec{"Reunione"}
         }
-        "Pacific:Enderbury"{
-            ec{"Enderbury"}
+        "Pacific:Easter"{
+            ec{"Ìsula de Pasca"}
+        }
+        "Pacific:Galapagos"{
+            ec{"Ìsulas Galàpagos"}
         }
         "Pacific:Guam"{
             ec{"Guàm"}
         }
-        "Pacific:Honolulu"{
-            sd{"OLH"}
-            sg{"OIH"}
-            ss{"OIH"}
-        }
-        "Pacific:Kanton"{
-            ec{"Canton"}
-        }
         "Pacific:Marquesas"{
             ec{"Marchesas"}
+        }
+        "Pacific:Wallis"{
+            ec{"Wallis e Futuna"}
         }
         "meta:Acre"{
             ld{"Ora legale de Acre"}
@@ -296,9 +294,7 @@ sc{
             ls{"Ora istandard de s’Àfrica meridionale"}
         }
         "meta:Africa_Western"{
-            ld{"Ora legale de s’Àfrica otzidentale"}
-            lg{"Ora de s’Àfrica otzidentale"}
-            ls{"Ora istandard de s’Àfrica otzidentale"}
+            ls{"Ora de s’Àfrica otzidentale"}
         }
         "meta:Alaska"{
             ld{"Ora legale de s’Alaska"}
@@ -473,11 +469,6 @@ sc{
             lg{"Ora de sa Tzina"}
             ls{"Ora istandard de sa Tzina"}
         }
-        "meta:Choibalsan"{
-            ld{"Ora legale de Choibalsan"}
-            lg{"Ora de Choibalsan"}
-            ls{"Ora istandard de Choibalsan"}
-        }
         "meta:Christmas"{
             ls{"Ora de s’Ìsula de sa Natividade"}
         }
@@ -498,6 +489,9 @@ sc{
             ld{"Ora legale de Cuba"}
             lg{"Ora de Cuba"}
             ls{"Ora istandard de Cuba"}
+            sd{"OLC"}
+            sg{"OC"}
+            ss{"OIC"}
         }
         "meta:Davis"{
             ls{"Ora de Davis"}
@@ -568,6 +562,11 @@ sc{
         "meta:Gilbert_Islands"{
             ls{"Ora de sas Ìsulas Gilbert"}
         }
+        "meta:Greenland"{
+            ld{"Ora legale de sa Groenlàndia"}
+            lg{"Ora de sa Groenlàndia"}
+            ls{"Ora istandard de sa Groenlàndia"}
+        }
         "meta:Greenland_Eastern"{
             ld{"Ora legale de sa Groenlàndia orientale"}
             lg{"Ora de sa Groenlàndia orientale"}
@@ -586,6 +585,9 @@ sc{
         }
         "meta:Guyana"{
             ls{"Ora de sa Guyana"}
+        }
+        "meta:Hawaii"{
+            ls{"Ora istandard de sas ìsulas Hawaii-Aleutinas"}
         }
         "meta:Hawaii_Aleutian"{
             ld{"Ora legale de sas ìsulas Hawaii-Aleutinas"}
@@ -645,6 +647,9 @@ sc{
             lg{"Ora de Petropavlovsk-Kamchatski"}
             ls{"Ora istandard de Petropavlovsk-Kamchatski"}
         }
+        "meta:Kazakhstan"{
+            ls{"Ora de su Kazàkistan"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Ora de su Kazàkistan orientale"}
         }
@@ -683,9 +688,6 @@ sc{
             lg{"Ora de Macao"}
             ls{"Ora istandard de Macao"}
         }
-        "meta:Macquarie"{
-            ls{"Ora de s’Ìsula Macquarie"}
-        }
         "meta:Magadan"{
             ld{"Ora legale de Magadan"}
             lg{"Ora de Magadan"}
@@ -710,11 +712,6 @@ sc{
         }
         "meta:Mawson"{
             ls{"Ora de Mawson"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Ora legale de su Mèssicu nord-otzidentale"}
-            lg{"Ora de su Mèssicu nord-otzidentale"}
-            ls{"Ora istandard de su Mèssicu nord-otzidentale"}
         }
         "meta:Mexico_Pacific"{
             ld{"Ora legale de su Patzìficu (Mèssicu)"}

@@ -1,0 +1,78 @@
+diff --git a/source/i18n/numrange_impl.cpp b/source/i18n/numrange_impl.cpp
+index 0b1590158..7c6cabd7d 100644
+--- a/source/i18n/numrange_impl.cpp
++++ b/source/i18n/numrange_impl.cpp
+@@ -391,6 +391,7 @@ void NumberRangeFormatterImpl::formatRange(UFormattedNumberRangeData& data,
+     FormattedStringBuilder tempString;
+     NumberFormatterImpl::writeNumber(micros2.simple, data.quantity2, tempString, 0, status);
+     length2 += string.insert(UPRV_INDEX_2, tempString, status);
++    if (U_FAILURE(status)) { return; }
+ 
+     // TODO: Support padding?
+ 
+diff --git a/source/test/intltest/numbertest.h b/source/test/intltest/numbertest.h
+index 3a36500f8..32aca96df 100644
+--- a/source/test/intltest/numbertest.h
++++ b/source/test/intltest/numbertest.h
+@@ -336,6 +336,7 @@ class NumberRangeFormatterTest : public IntlTestWithFieldPosition {
+     void testCreateLNRFFromNumberingSystemInSkeleton();
+     void test22288_DifferentStartEndSettings();
+     void test23110_PercentApproximately();
++    void test23539_LargeRangeError();
+ 
+     void runIndexedTest(int32_t index, UBool exec, const char*& name, char* par = nullptr) override;
+ 
+diff --git a/source/test/intltest/numbertest_range.cpp b/source/test/intltest/numbertest_range.cpp
+index d05dbc283..e1d9dc37c 100644
+--- a/source/test/intltest/numbertest_range.cpp
++++ b/source/test/intltest/numbertest_range.cpp
+@@ -61,6 +61,7 @@ void NumberRangeFormatterTest::runIndexedTest(int32_t index, UBool exec, const c
+         TESTCASE_AUTO(testCreateLNRFFromNumberingSystemInSkeleton);
+         TESTCASE_AUTO(test22288_DifferentStartEndSettings);
+         TESTCASE_AUTO(test23110_PercentApproximately);
++        TESTCASE_AUTO(test23539_LargeRangeError);
+     TESTCASE_AUTO_END;
+ }
+ 
+@@ -1204,6 +1205,41 @@ void NumberRangeFormatterTest::test23110_PercentApproximately() {
+         u"500,000% – 500,000,000%");
+ }
+ 
++void NumberRangeFormatterTest::test23539_LargeRangeError() {
++    IcuTestErrorCode status(*this, "test23539_LargeRangeError");
++    CurrencyUnit eur(u"EUR", status);
++    if (status.errIfFailureAndReset("CurrencyUnit EUR")) {
++        return;
++    }
++
++    LocalizedNumberRangeFormatter lnrf = NumberRangeFormatter::withLocale("bn-u-nu-mathsanb")
++        .numberFormatterBoth(
++            NumberFormatter::with()
++                .unit(eur)
++                .unitWidth(UNUM_UNIT_WIDTH_ISO_CODE)
++                .precision(Precision::integer()));
++
++    Formattable smallNeg(-1);
++    Formattable smallPos(1);
++    Formattable hugeNeg("-1e220000000", status);
++    Formattable hugePos("1e220000000", status);
++    if (status.errIfFailureAndReset("Formattable setup")) {
++        return;
++    }
++
++    lnrf.formatFormattableRange(smallNeg, hugePos, status);
++    status.expectErrorAndReset(U_ILLEGAL_ARGUMENT_ERROR);
++
++    lnrf.formatFormattableRange(hugeNeg, smallPos, status);
++    status.expectErrorAndReset(U_ILLEGAL_ARGUMENT_ERROR);
++
++    lnrf.formatFormattableRange(hugeNeg, hugePos, status);
++    status.expectErrorAndReset(U_ILLEGAL_ARGUMENT_ERROR);
++
++    lnrf.formatFormattableRange(hugePos, hugePos, status);
++    status.expectErrorAndReset(U_ILLEGAL_ARGUMENT_ERROR);
++}
++
+ void  NumberRangeFormatterTest::assertFormatRange(
+       const char16_t* message,
+       const UnlocalizedNumberRangeFormatter& f,

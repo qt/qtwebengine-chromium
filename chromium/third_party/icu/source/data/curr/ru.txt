@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 ru{
     Currencies{
         ADP{
@@ -1027,6 +1027,10 @@ ru{
             "EC$",
             "восточно-карибский доллар",
         }
+        XCG{
+            "Cg",
+            "карибский гульден",
+        }
         XDR{
             "XDR",
             "СДР (специальные права заимствования)",
@@ -1118,6 +1122,10 @@ ru{
         ZWD{
             "ZWD",
             "Доллар Зимбабве",
+        }
+        ZWG{
+            "ZWG",
+            "зимбабвийский золотой",
         }
         ZWL{
             "ZWL",
@@ -2067,6 +2075,12 @@ ru{
             one{"восточно-карибский доллар"}
             other{"восточно-карибского доллара"}
         }
+        XCG{
+            few{"карибских гульдена"}
+            many{"карибских гульденов"}
+            one{"карибский гульден"}
+            other{"карибского гульдена"}
+        }
         XOF{
             few{"франка КФА ВСЕАО"}
             many{"франков КФА ВСЕАО"}
@@ -2109,11 +2123,11 @@ ru{
             one{"замбийская квача"}
             other{"замбийской квачи"}
         }
-    }
-    CurrencyUnitPatterns{
-        few{"{0} {1}"}
-        many{"{0} {1}"}
-        one{"{0} {1}"}
-        other{"{0} {1}"}
+        ZWG{
+            few{"зимбабвийских золотых"}
+            many{"зимбабвийских золотых"}
+            one{"зимбабвийский золотой"}
+            other{"зимбабвийского золотого"}
+        }
     }
 }

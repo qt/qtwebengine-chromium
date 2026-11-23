@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 pcm{
     units{
         acceleration{
@@ -154,6 +154,9 @@ pcm{
                 one{"{0} Karat"}
                 other{"{0} Karat"}
             }
+            katal{
+                dnam{"katáls"}
+            }
             milligram-ofglucose-per-deciliter{
                 dnam{"Mílígram-dẹm Fọ Ẹ́vrí Dẹsílíta"}
                 one{"{0} Mílígram Fọ Ẹ́vrí Dẹsílíta"}
@@ -169,6 +172,24 @@ pcm{
                 one{"{0} Mol"}
                 other{"{0} Mol"}
             }
+            ofglucose{
+                dnam{"ọf glúcọs"}
+                one{"{0} of glúcọs"}
+                other{"{0} of glúcọs"}
+            }
+            part{
+                dnam{"párts"}
+            }
+            part-per-1e6{
+                dnam{"Pat-dẹm Fọ Ích Míliọn"}
+                one{"{0} Pat Fọ Ích Míliọn"}
+                other{"{0} Pat Fọ Ích Míliọn"}
+            }
+            part-per-1e9{
+                dnam{"pat fọ ích bíliọn"}
+                one{"{0} pat fọ ích bíliọn"}
+                other{"{0} pat fọ ích bíliọn"}
+            }
             percent{
                 one{"{0} Pasẹnt"}
                 other{"{0} Pasẹnt"}
@@ -176,11 +197,6 @@ pcm{
             permille{
                 one{"{0} Fọ Ích Taúzan"}
                 other{"{0} Fọ Ích Taúzan"}
-            }
-            permillion{
-                dnam{"Pat-dẹm Fọ Ích Míliọn"}
-                one{"{0} Pat Fọ Ích Míliọn"}
-                other{"{0} Pat Fọ Ích Míliọn"}
             }
             permyriad{
                 one{"{0} Fọ Ích Tẹ́n Taúzan"}
@@ -369,6 +385,11 @@ pcm{
                 one{"{0} Ẹlẹ́ktrọ́nvolt"}
                 other{"{0} Ẹlẹ́ktrọ́nvolt"}
             }
+            foodcalorie{
+                dnam{"Kálọ́ri-dẹm"}
+                one{"{0} Kálọ́ri"}
+                other{"{0} Kálọ́ri"}
+            }
             joule{
                 dnam{"Jul-dẹm"}
                 one{"{0} Jul"}
@@ -435,6 +456,20 @@ pcm{
             }
         }
         graphics{
+            dot{
+                one{"{0}dọt"}
+                other{"{0}dọt"}
+            }
+            dot-per-centimeter{
+                dnam{"Pọint-dẹm fọ ích sẹntímíta"}
+                one{"{0} Pọint fọ ích sẹntímíta"}
+                other{"{0} Pọint fọ ích sẹntímíta"}
+            }
+            dot-per-inch{
+                dnam{"Pọint-Dẹm Fọ Ẹ́vrí Inch"}
+                one{"{0} Pọint Fọ Ẹ́vrí Inch"}
+                other{"{0} Pọint Fọ Ẹ́vrí Inch"}
+            }
             em{
                 dnam{"Taipógráfik em"}
                 one{"{0} em"}
@@ -591,6 +626,16 @@ pcm{
                 dnam{"Sólá Luminósíti-dẹm"}
                 one{"{0} Sólá Luminósíti"}
                 other{"{0} Sólá Luminósíti"}
+            }
+        }
+        magnetic{
+            tesla{
+                dnam{"tẹslás"}
+            }
+            weber{
+                dnam{"Webers"}
+                one{"{0} Wb"}
+                other{"{0} webers"}
             }
         }
         mass{
@@ -984,14 +1029,25 @@ pcm{
                 one{"{0} kárá"}
                 other{"{0} kárá"}
             }
+            ofglucose{
+                dnam{"glúcọs"}
+            }
+            part{
+                dnam{"párt"}
+            }
+            part-per-1e6{
+                dnam{"Pfim"}
+            }
+            part-per-1e9{
+                dnam{"pfib"}
+                one{"{0}pfib"}
+                other{"{0}pfib"}
+            }
             percent{
                 dnam{"%"}
             }
             permille{
                 dnam{"‰"}
-            }
-            permillion{
-                dnam{"Pfim"}
             }
             permyriad{
                 dnam{"‱"}
@@ -1083,6 +1139,10 @@ pcm{
                 one{"{0}Mọnt"}
                 other{"{0}Mọnt"}
             }
+            night{
+                one{"{0}nait"}
+                other{"{0}nait"}
+            }
             second{
                 dnam{"Sẹ́kọn"}
                 one{"{0}Sẹ́kọn"}
@@ -1153,6 +1213,10 @@ pcm{
         speed{
             kilometer-per-hour{
                 dnam{"km/áw"}
+            }
+            light-speed{
+                one{"{0}laít"}
+                other{"{0}laít"}
             }
         }
         temperature{
@@ -1290,16 +1354,27 @@ pcm{
             millimole-per-liter{
                 dnam{"Mílimol/Líta"}
             }
+            ofglucose{
+                dnam{"glúcọs"}
+            }
+            part{
+                dnam{"párt"}
+            }
+            part-per-1e6{
+                dnam{"Pat/Míliọn"}
+                one{"{0} pfim"}
+                other{"{0} pfim"}
+            }
+            part-per-1e9{
+                dnam{"pat/bíliọn"}
+                one{"{0} pfib"}
+                other{"{0} pfib"}
+            }
             percent{
                 dnam{"Pasẹnt"}
             }
             permille{
                 dnam{"Fọ Ích Taúzan"}
-            }
-            permillion{
-                dnam{"Pat/Míliọn"}
-                one{"{0} pfim"}
-                other{"{0} pfim"}
             }
             permyriad{
                 dnam{"Fọ Ích Tẹ́n Taúzan"}
@@ -1419,6 +1494,12 @@ pcm{
                 one{"{0} Nansẹk"}
                 other{"{0} Nansẹk"}
             }
+            night{
+                dnam{"nait"}
+                one{"{0} nait"}
+                other{"{0} nait"}
+                per{"{0}/nait"}
+            }
             quarter{
                 dnam{"kwt"}
                 one{"{0} kwt"}
@@ -1474,6 +1555,11 @@ pcm{
                 one{"{0} ẹV"}
                 other{"{0} ẹV"}
             }
+            foodcalorie{
+                dnam{"Kal"}
+                one{"{0} Kal"}
+                other{"{0} Kal"}
+            }
             joule{
                 dnam{"Joules"}
             }
@@ -1505,6 +1591,21 @@ pcm{
             }
         }
         graphics{
+            dot{
+                dnam{"dọt"}
+                one{"{0} dọt"}
+                other{"{0} dọt"}
+            }
+            dot-per-centimeter{
+                dnam{"Pọints fọ ích sẹntímíta"}
+                one{"{0} PFIS"}
+                other{"{0} PFIS"}
+            }
+            dot-per-inch{
+                dnam{"Pọints Fọ Ẹ́vrí Inch"}
+                one{"{0} PFẸI"}
+                other{"{0} PFẸI"}
+            }
             megapixel{
                 dnam{"Mẹ́gapíksẹls"}
                 one{"{0} Mẹ́gapíks"}
@@ -1636,7 +1737,9 @@ pcm{
                 dnam{"Tọns"}
             }
             tonne{
-                dnam{"T"}
+                dnam{"M. Tọn-dẹm"}
+                one{"{0} M. Tọn"}
+                other{"{0} M. Tọn"}
             }
         }
         power{
@@ -1681,6 +1784,11 @@ pcm{
                 dnam{"Nọt"}
                 one{"{0} Nọt"}
                 other{"{0} Nọt"}
+            }
+            light-speed{
+                dnam{"laít"}
+                one{"{0} laít"}
+                other{"{0} laít"}
             }
             meter-per-second{
                 dnam{"Mítas/Sẹk"}

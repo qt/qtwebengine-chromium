@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 ast{
     zoneStrings{
         "Africa:Addis_Ababa"{
@@ -116,9 +116,6 @@ ast{
         }
         "America:Puerto_Rico"{
             ec{"Puertu Ricu"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
         }
         "America:Santo_Domingo"{
             ec{"Santu Domingu"}
@@ -240,9 +237,6 @@ ast{
         "Australia:Adelaide"{
             ec{"Adelaida"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"Hora coordinada universal"}
         }
@@ -350,9 +344,6 @@ ast{
         "Pacific:Easter"{
             ec{"Pascua"}
         }
-        "Pacific:Enderbury"{
-            ec{"Enderbury"}
-        }
         "Pacific:Fiji"{
             ec{"Fixi"}
         }
@@ -361,9 +352,6 @@ ast{
         }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
-            sd{"HDT"}
-            sg{"HST"}
-            ss{"HST"}
         }
         "meta:Acre"{
             ld{"hora braniega d’Acre"}
@@ -383,9 +371,7 @@ ast{
             ls{"Hora de Sudáfrica"}
         }
         "meta:Africa_Western"{
-            ld{"Hora braniega d’África del oeste"}
-            lg{"Hora d’África del oeste"}
-            ls{"Hora estándar d’África del oeste"}
+            ls{"Hora d’África del oeste"}
         }
         "meta:Alaska"{
             ld{"Hora braniega d’Alaska"}
@@ -560,11 +546,6 @@ ast{
             lg{"Hora de China"}
             ls{"Hora estándar de China"}
         }
-        "meta:Choibalsan"{
-            ld{"Hora braniega de Choibalsan"}
-            lg{"Hora de Choibalsan"}
-            ls{"Hora estándar de Choibalsan"}
-        }
         "meta:Christmas"{
             ls{"Hora estándar de la Islla Christmas"}
         }
@@ -674,6 +655,9 @@ ast{
         "meta:Guyana"{
             ls{"Hora de La Guyana"}
         }
+        "meta:Hawaii"{
+            ls{"Hora estándar de Hawaii-Aleutianes"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Hora braniega de Hawaii-Aleutianes"}
             lg{"Hora de Hawaii-Aleutianes"}
@@ -773,9 +757,6 @@ ast{
             lg{"Hora de Macáu"}
             ls{"Hora estándar de Macáu"}
         }
-        "meta:Macquarie"{
-            ls{"Hora de la Islla Macquarie"}
-        }
         "meta:Magadan"{
             ld{"Hora braniega de Magadán"}
             lg{"Hora de Magadán"}
@@ -800,11 +781,6 @@ ast{
         }
         "meta:Mawson"{
             ls{"Hora de Mawson"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Hora braniega del noroeste de Méxicu"}
-            lg{"Hora del noroeste de Méxicu"}
-            ls{"Hora estándar del noroeste de Méxicu"}
         }
         "meta:Mexico_Pacific"{
             ld{"Hora braniega del Pacíficu de Méxicu"}

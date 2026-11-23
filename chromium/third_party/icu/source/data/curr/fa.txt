@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 fa{
     Currencies{
         ADP{
@@ -97,7 +97,7 @@ fa{
         }
         BGN{
             "BGN",
-            "لف بلغارستان",
+            "لو بلغارستان",
         }
         BHD{
             "BHD",
@@ -353,7 +353,7 @@ fa{
         }
         ILS{
             "₪",
-            "شقل جدید اسرائیل",
+            "شِکِل جدید اسرائیل",
         }
         INR{
             "₹",
@@ -641,7 +641,7 @@ fa{
         }
         PLN{
             "PLN",
-            "زواتی لهستان",
+            "زلوتی لهستان",
         }
         PTE{
             "PTE",
@@ -883,6 +883,10 @@ fa{
             "$EC",
             "دلار شرق کارائیب",
         }
+        XCG{
+            "Cg.",
+            "گیلدر کارائیب",
+        }
         XFO{
             "XFO",
             "فرانک طلای فرانسه",
@@ -935,6 +939,10 @@ fa{
             "ZWD",
             "دلار زیمبابوه (۱۹۸۰ تا ۲۰۰۸)",
         }
+        ZWG{
+            "ZWG",
+            "طلای زیمبابوه",
+        }
         ZWL{
             "ZWL",
             "دلار زیمبابوه (۲۰۰۹)",
@@ -945,7 +953,7 @@ fa{
         }
     }
     Currencies%narrow{
-        BYN{"р."}
+        BYN{"Br"}
     }
     Currencies%variant{
         RUB{"₽"}
@@ -963,6 +971,10 @@ fa{
             one{"اونس تروا طلا"}
             other{"اونس تروا طلا"}
         }
+        XCG{
+            one{"گیلدر کارائیب"}
+            other{"گیلدر کارائیب"}
+        }
         XPT{
             one{"اونس تروا پلاتین"}
             other{"اونس تروا پلاتین"}
@@ -974,6 +986,10 @@ fa{
         XXX{
             one{"(ارز نامشخص)"}
             other{"(ارز نامشخص)"}
+        }
+        ZWG{
+            one{"طلای زیمبابوه"}
+            other{"طلای زیمبابوه"}
         }
     }
 }

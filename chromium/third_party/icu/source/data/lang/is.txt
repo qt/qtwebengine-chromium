@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 is{
     Keys{
         calendar{"Tímatal"}
@@ -14,10 +14,13 @@ is{
         colStrength{"Röðunarstyrkur"}
         collation{"Röðun"}
         currency{"Gjaldmiðill"}
+        em{"Framsetning emoji"}
         hc{"Tímakerfi (12 eða 24)"}
         lb{"Línuskipting"}
+        lw{"Línuskil innan orða"}
         ms{"Mælingakerfi"}
         numbers{"Tölur"}
+        ss{"Hindranir á línuskiptingu"}
         timezone{"Tímabelti"}
         va{"Landsstaðalsafbrigði"}
         x{"Einkanotkun"}
@@ -75,6 +78,7 @@ is{
         bik{"bíkol"}
         bin{"bíní"}
         bla{"siksika"}
+        blo{"anii"}
         bm{"bambara"}
         bn{"bengalska"}
         bo{"tíbeska"}
@@ -294,6 +298,7 @@ is{
         kv{"komíska"}
         kw{"kornbreska"}
         kwk{"kwakʼwala"}
+        kxv{"kúví"}
         ky{"kirgiska"}
         la{"latína"}
         lad{"ladínska"}
@@ -304,8 +309,10 @@ is{
         lez{"lesgíska"}
         lg{"ganda"}
         li{"limbúrgíska"}
+        lij{"lígúríska"}
         lil{"lillooet"}
         lkt{"lakóta"}
+        lmo{"lombardíska"}
         ln{"lingala"}
         lo{"laó"}
         lol{"mongó"}
@@ -494,6 +501,7 @@ is{
         swb{"shimaoríska"}
         syc{"klassísk sýrlenska"}
         syr{"sýrlenska"}
+        szl{"slesíska"}
         ta{"tamílska"}
         tce{"suður-tutchone"}
         te{"telúgú"}
@@ -542,7 +550,9 @@ is{
         uz{"úsbekska"}
         vai{"vaí"}
         ve{"venda"}
+        vec{"feneyska"}
         vi{"víetnamska"}
+        vmw{"makúva"}
         vo{"volapyk"}
         vot{"votíska"}
         vun{"vunjó"}
@@ -556,6 +566,7 @@ is{
         wuu{"wu-kínverska"}
         xal{"kalmúkska"}
         xh{"sósa"}
+        xnr{"kangrí"}
         xog{"sóga"}
         yao{"jaó"}
         yap{"japíska"}
@@ -577,6 +588,12 @@ is{
         zun{"súní"}
         zxx{"ekkert tungumálaefni"}
         zza{"zázáíska"}
+    }
+    Languages%core{
+        ku{"kúrdíska"}
+    }
+    Languages%extension{
+        ku{"kurmanji"}
     }
     Languages%long{
         zh_Hans{"mandarín (einfölduð)"}
@@ -642,8 +659,8 @@ is{
         Orya{"oriya"}
         Rohg{"hanifi"}
         Sinh{"sinhala"}
-        Sund{"sundanesíska"}
-        Syrc{"syriakíska"}
+        Sund{"sundanesískt"}
+        Syrc{"syriakískt"}
         Taml{"tamílskt"}
         Telu{"telúgú"}
         Tfng{"tifinagh"}
@@ -669,9 +686,9 @@ is{
     Types{
         calendar{
             buddhist{"Búddískt tímatal"}
-            chinese{"Kínversk tímatal"}
+            chinese{"Kínverskt tímatal"}
             coptic{"Koptískt tímatal"}
-            dangi{"Dangi tímatal"}
+            dangi{"Dangi-tímatal"}
             ethiopic{"Eþíópískt tímatal"}
             ethiopic-amete-alem{"Eþíópískt ‘amete alem’ tímatal"}
             gregorian{"Gregorískt tímatal"}
@@ -683,11 +700,31 @@ is{
             iso8601{"ISO-8601 tímatal"}
             japanese{"Japanskt tímatal"}
             persian{"Persneskt tímatal"}
-            roc{"Minguo tímatal"}
+            roc{"Minguo-tímatal"}
+        }
+        calendar%core{
+            buddhist{"Búddískt"}
+            chinese{"Kínverskt"}
+            coptic{"Koptískt"}
+            dangi{"Dangi"}
+            ethiopic{"Eþíópískt"}
+            ethiopic-amete-alem{"Eþíópískt ‘amete alem’"}
+            gregorian{"Gregorískt"}
+            hebrew{"Hebreskt"}
+            islamic{"Íslamskt tímatal"}
+            islamic-civil{"Íslamskt borgaradagatal"}
+            islamic-umalqura{"Íslamskt dagatal (Umm al-Qura)"}
+            japanese{"Japanskt"}
+            persian{"Persneskt"}
+            roc{"Minguo"}
         }
         cf{
             account{"Bókhaldsgjaldmiðill"}
             standard{"Staðlað gjaldmiðilssnið"}
+        }
+        cf%core{
+            account{"Bókhald"}
+            standard{"Staðlað"}
         }
         colAlternate{
             non-ignorable{"Raða táknum"}
@@ -722,16 +759,13 @@ is{
             tertiary{"Raða áherslum/hástaf eða lágstaf/breidd"}
         }
         collation{
-            big5han{"hefðbundin kínversk röðun - Big5"}
             compat{"Fyrri röðun, til samræmis"}
             dictionary{"Orðabókarröð"}
             ducet{"Sjálfgefin Unicode-röðun"}
             eor{"Evrópskar reglur um röðun"}
-            gb2312han{"einfölduð kínversk röðun - GB2312"}
             phonebook{"Símaskráarröðun"}
             phonetic{"Hljóðfræðileg röð"}
             pinyin{"Pinyin-röðun"}
-            reformed{"Endurbætt röð"}
             search{"Almenn leit"}
             searchjl{"Leita eftir upphafssamhljóða í Hangul"}
             standard{"Stöðluð röðun"}
@@ -739,10 +773,20 @@ is{
             traditional{"Hefðbundin"}
             unihan{"Röðun eftir grunnstrikum"}
         }
+        collation%core{
+            ducet{"Sjálfgefin Unicode"}
+            search{"Leit"}
+            standard{"Stöðluð"}
+        }
         d0{
             fwidth{"Full breidd"}
             hwidth{"Hálfbreidd"}
             npinyin{"Tölulegur"}
+        }
+        em%core{
+            default{"Staðlað"}
+            emoji{"Emoji"}
+            text{"Texti"}
         }
         hc{
             h11{"12 tíma kerfi (0–11)"}
@@ -750,10 +794,27 @@ is{
             h23{"24 tíma kerfi (0–23)"}
             h24{"24 tíma kerfi (1–24)"}
         }
+        hc%core{
+            h11{"12 (0–11)"}
+            h12{"12 (1–12)"}
+            h23{"24 (0–23)"}
+            h24{"24 (1–24)"}
+        }
         lb{
             loose{"Laus línuskipting"}
             normal{"Venjuleg línuskipting"}
             strict{"Ströng línuskipting"}
+        }
+        lb%core{
+            loose{"Laus"}
+            normal{"Venjuleg"}
+            strict{"Ströng"}
+        }
+        lw%core{
+            breakall{"Skipta öllu"}
+            keepall{"Halda öllu"}
+            normal{"Venjuleg"}
+            phrase{"Halda í setningum"}
         }
         m0{
             bgn{"US BGN umritun"}
@@ -763,6 +824,11 @@ is{
             metric{"Metrakerfi"}
             uksystem{"Breskt mælingakerfi"}
             ussystem{"Bandarískt mælingakerfi"}
+        }
+        ms%core{
+            metric{"Metrakerfi"}
+            uksystem{"Breskt"}
+            ussystem{"Bandarískt"}
         }
         numbers{
             ahom{"ahom-tölur"}
@@ -810,6 +876,10 @@ is{
             tibt{"Tíbeskir tölustafir"}
             traditional{"Hefðbundin tölutákn"}
             vaii{"Vai-tölustafir"}
+        }
+        ss%core{
+            none{"Slökkt"}
+            standard{"Kveikt"}
         }
     }
     characterLabelPattern{

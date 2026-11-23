@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 am{
     ExemplarCharacters{
         "[ሀ ሁ ሂ ሃ ሄ ህ ሆ ለ ሉ ሊ ላ ሌ ል ሎ ሏ ሐ ሑ ሒ ሓ ሔ ሕ ሖ ሗ መ ሙ ሚ ማ ሜ ም ሞ ሟ ሠ ሡ ሢ ሣ ሤ ሥ ሦ"
@@ -232,6 +232,9 @@ am{
                     }
                 }
             }
+            symbols{
+                nan{"በቁጥር ሊገለጽ የማይችል"}
+            }
         }
         minimalPairs{
             case{
@@ -252,12 +255,34 @@ am{
         buddhist{
             availableFormats{
                 GyMMM{"MMM፣ y G"}
+                yyyyM{"GGGGG y-MM"}
+                yyyyMEd{"GGGGG y-MM-dd, E"}
+                yyyyMd{"GGGGG y-MM-dd"}
+            }
+            intervalFormats{
+                H{
+                    H{"HH–HH"}
+                }
+                Hv{
+                    H{"HH–HH v"}
+                }
             }
         }
         ethiopic{
             availableFormats{
                 GyMMM{"MMM፣ y G"}
                 MMMMEd{"E, MMMM d"}
+                yyyyM{"GGGGG y-MM"}
+                yyyyMEd{"GGGGG y-MM-dd, E"}
+                yyyyMd{"GGGGG y-MM-dd"}
+            }
+            intervalFormats{
+                H{
+                    H{"HH–HH"}
+                }
+                Hv{
+                    H{"HH–HH v"}
+                }
             }
             monthNames{
                 format{
@@ -294,6 +319,12 @@ am{
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
+            }
+            DateTimePatterns%relative{
+                "{1} በ {0}",
+                "{1} በ {0}",
+                "{1} በ {0}",
+                "{1} በ {0}",
             }
             availableFormats{
                 Ed{"E d"}
@@ -403,7 +434,7 @@ am{
                 "h:mm:ss a z",
                 "h:mm:ss a",
                 "h:mm a",
-                "y MMMM d, EEEE",
+                "EEEE d MMMM y",
                 "d MMMM y",
                 "d MMM y",
                 "dd/MM/y",
@@ -424,28 +455,47 @@ am{
                 "yMMdd",
             }
             availableFormats{
+                Bh{"B h"}
+                Bhm{"B h:mm"}
+                Bhms{"B h:mm:ss"}
+                EBh{"E B h"}
+                EBhm{"E B h:mm"}
+                EBhms{"E B h:mm:ss"}
                 Ed{"E d"}
+                Eh{"E a h"}
+                Ehm{"E a h:mm"}
+                Ehms{"E a h:mm:ss"}
                 Gy{"y G"}
+                GyM{"M/y G"}
+                GyMEd{"E d/M/y G"}
                 GyMMM{"MMM y G"}
-                GyMd{"M/d/y GGGGG"}
+                GyMMMEd{"E MMM d y G"}
+                GyMMMd{"MMM d y G"}
+                GyMd{"d/M/y GGGGG"}
                 H{"H"}
-                MEd{"E፣ M/d"}
+                MEd{"E፣ d/M"}
                 MMMEd{"E፣ MMM d"}
                 MMMMEd{"E፣ MMMM d"}
                 MMMMW{
-                    one{"ሳምንት W የ MMMM"}
-                    other{"ሳምንት W የ MMMM"}
+                    one{"የMMMM Wኛ ሳምንት"}
+                    other{"የMMMM Wኛ ሳምንት"}
                 }
-                Md{"M/d"}
+                Md{"d/M"}
+                h{"a h"}
+                hm{"a h:mm"}
+                hms{"a h:mm:ss"}
+                hv{"a h v"}
                 yM{"M/y"}
                 yMEd{"E፣ d/M/y"}
                 yMMM{"MMM y"}
                 yMMMEd{"E፣ MMM d y"}
                 yMMMM{"MMMM y"}
-                yMMMd{"d MMM y"}
+                yMMMd{"MMM d y"}
                 yMd{"d/M/y"}
-                yQQQ{"QQQ y"}
-                yQQQQ{"QQQQ y"}
+                yw{
+                    one{"የY wኛ ሳምንት"}
+                    other{"የY wኛ ሳምንት"}
+                }
             }
             dayNames{
                 format{
@@ -510,40 +560,31 @@ am{
                 }
                 stand-alone{
                     abbreviated{
-                        afternoon1{"ከሰዓት በኋላ"}
+                        afternoon1{"ከሰዓት"}
                         evening1{"ምሽት"}
                         morning1{"ጥዋት"}
                         night1{"ሌሊት"}
                     }
                     narrow{
-                        afternoon1{"ከሰዓት በኋላ"}
                         am{"ጠ"}
-                        evening1{"ማታ"}
-                        morning1{"ጥዋት"}
-                        night1{"ሌሊት"}
                         pm{"ከ"}
                     }
                 }
             }
             eras{
                 abbreviated{
-                    "ዓ/ዓ",
-                    "ዓ/ም",
-                }
-                abbreviated%variant{
-                    "ዓ/ዓ",
-                    "መዓ",
+                    0{"ዓ/ዓ"}
+                    1{"ዓ/ም"}
                 }
                 wide{
-                    "ዓመተ ዓለም",
-                    "ዓመተ ምሕረት",
-                }
-                wide%variant{
-                    "ዓ/ዓ",
-                    "ዓ/ም",
+                    0{"ዓመተ ዓለም"}
+                    1{"ዓመተ ምሕረት"}
                 }
             }
             intervalFormats{
+                Bh{
+                    B{"B h – B h"}
+                }
                 GyM{
                     G{"GGGGG M/y – GGGGG M/y"}
                     M{"GGGGG M/y – M/y"}
@@ -568,7 +609,6 @@ am{
                 }
                 GyMd{
                     G{"GGGGG d/M/y – GGGGG d/M/y"}
-                    M{"GGGGG d/M/y – d/M/y"}
                     d{"GGGGG d/M/y – d/M/y"}
                     y{"GGGGG d/M/y – d/M/y"}
                 }
@@ -992,12 +1032,28 @@ am{
             }
             relativeTime{
                 future{
-                    one{"+{0} ሩብ"}
-                    other{"+{0} ሩብ"}
+                    one{"በ{0} ሩብ"}
+                    other{"በ{0} ሩብ"}
                 }
                 past{
                     one{"{0} ሩብ በፊት"}
                     other{"{0} ሩብ በፊት"}
+                }
+            }
+        }
+        quarter-narrow{
+            relativeTime{
+                future{
+                    one{"በ{0} ሩብ"}
+                    other{"በ{0} ሩብ"}
+                }
+            }
+        }
+        quarter-short{
+            relativeTime{
+                future{
+                    one{"በ{0} ሩብ"}
+                    other{"በ{0} ሩብ"}
                 }
             }
         }
@@ -1240,26 +1296,15 @@ am{
     listPattern{
         or{
             2{"{0} ወይም {1}"}
-            end{"{0}፣ ወይም {1}"}
+            end{"{0} ወይም {1}"}
             middle{"{0}፣ {1}"}
             start{"{0}፣ {1}"}
         }
         standard{
             2{"{0} እና {1}"}
-            end{"{0}፣ እና {1}"}
+            end{"{0} እና {1}"}
             middle{"{0}፣ {1}"}
             start{"{0}፣ {1}"}
-        }
-        standard-narrow{
-            end{"{0}, እና {1}"}
-        }
-        unit-narrow{
-            2{"{0} {1}"}
-            end{"{0} {1}"}
-        }
-        unit-short{
-            2{"{0}፣ {1}"}
-            end{"{0}፣ {1}"}
         }
     }
     measurementSystemNames{
@@ -1267,49 +1312,11 @@ am{
         US{"ዩ ኤስ"}
         metric{"ሜትሪክ"}
     }
-    parse{
-        date{
-            lenient{
-                "[\\- ‑ . /]",
-                "[\\: ∶]",
-            }
-        }
-        general{
-            lenient{
-                "[.．․﹒ 。｡︒]",
-                "['＇’ ՚ ᾽᾿ ʼ]",
-                "[%％﹪ ٪]",
-                "[‰ ؉]",
-                "[\$＄﹩]",
-                "[£ ₤]",
-                "[¥￥]",
-                "[₩￦]",
-                "[₹ ₨ {Rp} {Rs}]",
-            }
-        }
-        number{
-            lenient{
-                "[\\-－﹣ ‑ ‒ −⁻₋ ➖]",
-                "[,，﹐︐ ، ٫ 、﹑､︑]",
-                "[+＋﬩﹢⁺₊ ➕]",
-            }
-            stricter{
-                "[,，﹐︐ ٫]",
-                "[.．․﹒ ｡]",
-            }
-        }
-    }
     personNames{
         nameOrderLocales{
             givenFirst{
                 "und",
                 "am",
-            }
-            surnameFirst{
-                "ko",
-                "vi",
-                "yue",
-                "zh",
             }
         }
     }

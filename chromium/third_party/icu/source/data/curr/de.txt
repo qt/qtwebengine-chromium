@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 de{
     Currencies{
         ADP{
@@ -905,7 +905,7 @@ de{
         }
         SLL{
             "SLL",
-            "Sierra-leonischer Leone (1964—2022)",
+            "Sierra-leonischer Leone (1964–2022)",
         }
         SOS{
             "SOS",
@@ -1103,6 +1103,10 @@ de{
             "EC$",
             "Ostkaribischer Dollar",
         }
+        XCG{
+            "Cg.",
+            "Karibischer Gulden",
+        }
         XDR{
             "XDR",
             "Sonderziehungsrechte",
@@ -1206,6 +1210,10 @@ de{
         ZWD{
             "ZWD",
             "Simbabwe-Dollar (1980–2008)",
+        }
+        ZWG{
+            "ZWG",
+            "Simbabwe-Gold",
         }
         ZWL{
             "ZWL",
@@ -1717,7 +1725,7 @@ de{
         }
         MVR{
             one{"Malediven-Rufiyaa"}
-            other{"Malediven-Rupien"}
+            other{"Malediven-Rufiyaa"}
         }
         MXN{
             one{"Mexikanischer Peso"}
@@ -1876,8 +1884,8 @@ de{
             other{"Sierra-leonische Leones"}
         }
         SLL{
-            one{"Sierra-leonischer Leone (1964—2022)"}
-            other{"Sierra-leonische Leones (1964—2022)"}
+            one{"Sierra-leonischer Leone (1964–2022)"}
+            other{"Sierra-leonische Leones (1964–2022)"}
         }
         SRG{
             one{"Suriname-Gulden"}
@@ -2011,6 +2019,10 @@ de{
             one{"Ostkaribischer Dollar"}
             other{"Ostkaribische Dollar"}
         }
+        XCG{
+            one{"Karibischer Gulden"}
+            other{"Karibische Gulden"}
+        }
         XEU{
             one{"Europäische Währungseinheiten (XEU)"}
             other{"Europäische Währungseinheiten (XEU)"}
@@ -2067,9 +2079,9 @@ de{
             one{"Zaire-Neuer Zaïre (1993–1998)"}
             other{"Zaire-Neue Zaïre (1993–1998)"}
         }
-    }
-    CurrencyUnitPatterns{
-        one{"{0} {1}"}
-        other{"{0} {1}"}
+        ZWG{
+            one{"Simbabwe-Gold"}
+            other{"Simbabwe-Gold"}
+        }
     }
 }

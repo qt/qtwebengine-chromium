@@ -1,0 +1,103 @@
+diff --git a/source/i18n/number_formatimpl.cpp b/source/i18n/number_formatimpl.cpp
+index 45baa9461..9a96dab78 100644
+--- a/source/i18n/number_formatimpl.cpp
++++ b/source/i18n/number_formatimpl.cpp
+@@ -24,6 +24,17 @@ using namespace icu;
+ using namespace icu::number;
+ using namespace icu::number::impl;
+ 
++namespace {
++
++// Maximum number of integer or fraction digits we will output during formatting.
++// Set to 999,999 to allow valid large-range performance tests (e.g., test21684_Performance
++// formatting -1e99999) while preventing runaway loops, allocation spikes, and timeouts
++// when formatting numbers with hugely out-of-bounds magnitudes (like scale/1e200000000).
++// This value may be tuned to a smaller value later if necessary.
++constexpr int32_t kMaxFormattedDigits = 999999;
++
++}  // namespace
++
+ 
+ NumberFormatterImpl::NumberFormatterImpl(const MacroProps& macros, UErrorCode& status)
+     : NumberFormatterImpl(macros, true, status) {
+@@ -537,6 +548,11 @@ int32_t NumberFormatterImpl::writeNumber(
+                 status);
+ 
+     } else {
++        if (quantity.getUpperDisplayMagnitude() + 1 > kMaxFormattedDigits ||
++            -quantity.getLowerDisplayMagnitude() > kMaxFormattedDigits) {
++            status = U_ILLEGAL_ARGUMENT_ERROR;
++            return 0;
++        }
+         // Add the integer digits
+         length += writeIntegerDigits(
+             micros,
+@@ -594,8 +610,13 @@ int32_t NumberFormatterImpl::writeIntegerDigits(
+         FormattedStringBuilder& string,
+         int32_t index,
+         UErrorCode& status) {
++    if (U_FAILURE(status)) { return 0; }
+     int length = 0;
+     int integerCount = quantity.getUpperDisplayMagnitude() + 1;
++    if (integerCount > kMaxFormattedDigits) {
++        status = U_ILLEGAL_ARGUMENT_ERROR;
++        return 0;
++    }
+     for (int i = 0; i < integerCount; i++) {
+         // Add grouping separator
+         if (micros.grouping.groupAtPosition(i, quantity)) {
+@@ -629,8 +650,13 @@ int32_t NumberFormatterImpl::writeFractionDigits(
+         FormattedStringBuilder& string,
+         int32_t index,
+         UErrorCode& status) {
++    if (U_FAILURE(status)) { return 0; }
+     int length = 0;
+     int fractionCount = -quantity.getLowerDisplayMagnitude();
++    if (fractionCount > kMaxFormattedDigits) {
++        status = U_ILLEGAL_ARGUMENT_ERROR;
++        return 0;
++    }
+     for (int i = 0; i < fractionCount; i++) {
+         // Get and append the next digit value
+         int8_t nextDigit = quantity.getDigit(-i - 1);
+diff --git a/source/test/intltest/numbertest.h b/source/test/intltest/numbertest.h
+index 9043f591f..3a36500f8 100644
+--- a/source/test/intltest/numbertest.h
++++ b/source/test/intltest/numbertest.h
+@@ -305,6 +305,7 @@ class NumberSkeletonTest : public IntlTest {
+     void perUnitInArabic();
+     void perUnitToSkeleton();
+     void measurementSystemOverride();
++    void testIssue23144();
+ 
+     void runIndexedTest(int32_t index, UBool exec, const char*& name, char* par = nullptr) override;
+ 
+diff --git a/source/test/intltest/numbertest_skeletons.cpp b/source/test/intltest/numbertest_skeletons.cpp
+index 91fc07451..9a319d1d2 100644
+--- a/source/test/intltest/numbertest_skeletons.cpp
++++ b/source/test/intltest/numbertest_skeletons.cpp
+@@ -35,6 +35,7 @@ void NumberSkeletonTest::runIndexedTest(int32_t index, UBool exec, const char*&
+         TESTCASE_AUTO(perUnitInArabic);
+         TESTCASE_AUTO(perUnitToSkeleton);
+         TESTCASE_AUTO(measurementSystemOverride);
++        TESTCASE_AUTO(testIssue23144);
+     TESTCASE_AUTO_END;
+ }
+ 
+@@ -572,4 +573,16 @@ void NumberSkeletonTest::measurementSystemOverride() {
+     }
+ }
+ 
++void NumberSkeletonTest::testIssue23144() {
++    IcuTestErrorCode status(*this, "testIssue23144");
++    UErrorCode err = U_ZERO_ERROR;
++    UnlocalizedNumberFormatter nf = NumberFormatter::forSkeleton(u"scale/1e200000000", err);
++    if (!assertSuccess("forSkeleton", err)) {
++        return;
++    }
++    FormattedNumber fn = nf.locale("en").formatDouble(1.0, err);
++    assertEquals("Expected U_ILLEGAL_ARGUMENT_ERROR when formatting hugely out-of-bounds magnitude",
++                 U_ILLEGAL_ARGUMENT_ERROR, err);
++}
++
+ #endif /* #if !UCONFIG_NO_FORMATTING */

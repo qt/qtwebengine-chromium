@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 blo{
     zoneStrings{
         "Africa:Abidjan"{
@@ -23,6 +23,9 @@ blo{
         }
         "Africa:Bangui"{
             ec{"Baŋgii"}
+        }
+        "Africa:Banjul"{
+            ec{"Banjuul"}
         }
         "Africa:Bissau"{
             ec{"Bisoo"}
@@ -65,6 +68,9 @@ blo{
         }
         "Africa:Freetown"{
             ec{"Friitaʊn"}
+        }
+        "Africa:Gaborone"{
+            ec{"Gaboronee"}
         }
         "Africa:Harare"{
             ec{"Hararee"}
@@ -174,6 +180,9 @@ blo{
         "America:Argentina:Rio_Gallegos"{
             ec{"Riyo Galegɔs"}
         }
+        "America:Argentina:Salta"{
+            ec{"Saltaa"}
+        }
         "America:Argentina:San_Juan"{
             ec{"San Huwan"}
         }
@@ -213,6 +222,9 @@ blo{
         "America:Boa_Vista"{
             ec{"Bowa Fistaa"}
         }
+        "America:Bogota"{
+            ec{"Bogotaa"}
+        }
         "America:Boise"{
             ec{"Bɔwaasɩ"}
         }
@@ -249,11 +261,17 @@ blo{
         "America:Ciudad_Juarez"{
             ec{"Siwuɖaaɖ Huwarɛs"}
         }
+        "America:Coral_Harbour"{
+            ec{"Atikokaan"}
+        }
         "America:Cordoba"{
             ec{"Kɔrɖobaa"}
         }
         "America:Costa_Rica"{
             ec{"Kɔsta Rikaa"}
+        }
+        "America:Coyhaique"{
+            ec{"Koihaiik"}
         }
         "America:Creston"{
             ec{"Krɛstɔn"}
@@ -299,6 +317,9 @@ blo{
         }
         "America:Glace_Bay"{
             ec{"Glaas Baɩ"}
+        }
+        "America:Godthab"{
+            ec{"Nuuku"}
         }
         "America:Goose_Bay"{
             ec{"Guus Baɩ"}
@@ -444,8 +465,8 @@ blo{
         "America:New_York"{
             ec{"Niu Yɔrk"}
         }
-        "America:Nipigon"{
-            ec{"Nipigɔn"}
+        "America:Nome"{
+            ec{"Noome"}
         }
         "America:Noronha"{
             ec{"Norɔnya"}
@@ -465,9 +486,6 @@ blo{
         "America:Panama"{
             ec{"Panamaa"}
         }
-        "America:Pangnirtung"{
-            ec{"Panyɩrtʊʊŋ"}
-        }
         "America:Paramaribo"{
             ec{"Paramariboo"}
         }
@@ -486,8 +504,8 @@ blo{
         "America:Puerto_Rico"{
             ec{"Pɔrto Rikoo"}
         }
-        "America:Rainy_River"{
-            ec{"Rɛɩni Riifa"}
+        "America:Punta_Arenas"{
+            ec{"Punta Arenaasɩ"}
         }
         "America:Rankin_Inlet"{
             ec{"Raŋkɩn Ɩnlɛɛtɩ"}
@@ -549,9 +567,6 @@ blo{
         "America:Thule"{
             ec{"Tuule"}
         }
-        "America:Thunder_Bay"{
-            ec{"Sanɖɛɛr Baɩ"}
-        }
         "America:Tijuana"{
             ec{"Tihuwana"}
         }
@@ -570,8 +585,8 @@ blo{
         "America:Winnipeg"{
             ec{"Winipɛɛg"}
         }
-        "America:Yellowknife"{
-            ec{"Yɛloonaɩf"}
+        "America:Yakutat"{
+            ec{"Yakutaatɩ"}
         }
         "Antarctica:Casey"{
             ec{"Keesi"}
@@ -663,9 +678,6 @@ blo{
         "Asia:Chita"{
             ec{"Shitaa"}
         }
-        "Asia:Choibalsan"{
-            ec{"Koibalsaan"}
-        }
         "Asia:Colombo"{
             ec{"Kolomboo"}
         }
@@ -710,6 +722,9 @@ blo{
         }
         "Asia:Jerusalem"{
             ec{"Yerusalɛm"}
+        }
+        "Asia:Kabul"{
+            ec{"Kabuul"}
         }
         "Asia:Kamchatka"{
             ec{"Kamshatkaa"}
@@ -923,7 +938,7 @@ blo{
             ss{"ƉAK"}
         }
         "Etc:Unknown"{
-            ec{"mpá nɖee kʊyɔʊ ʊ mana ma"}
+            ec{"gaɖu ŋgaɖee kʊyɔʊ ʊ mana ma"}
         }
         "Europe:Amsterdam"{
             ec{"Amstɛrɖam"}
@@ -1053,6 +1068,9 @@ blo{
         "Europe:Saratov"{
             ec{"Saratɔɔf"}
         }
+        "Europe:Simferopol"{
+            ec{"Simferopool"}
+        }
         "Europe:Skopje"{
             ec{"Skɔpyɛ"}
         }
@@ -1070,9 +1088,6 @@ blo{
         }
         "Europe:Ulyanovsk"{
             ec{"Ulyanɔɔf"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Usgɔrɔɖ"}
         }
         "Europe:Vaduz"{
             ec{"Faɖus"}
@@ -1094,9 +1109,6 @@ blo{
         }
         "Europe:Zagreb"{
             ec{"Sagrɛb"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Sapɔrɔsɩyɛ"}
         }
         "Europe:Zurich"{
             ec{"Suriik"}
@@ -1152,6 +1164,9 @@ blo{
         "Pacific:Efate"{
             ec{"Efatee"}
         }
+        "Pacific:Enderbury"{
+            ec{"Kantɔn"}
+        }
         "Pacific:Fakaofo"{
             ec{"Fakawofoo"}
         }
@@ -1169,12 +1184,6 @@ blo{
         }
         "Pacific:Guam"{
             ec{"Guwam"}
-        }
-        "Pacific:Johnston"{
-            ec{"Jɔnstɔn"}
-        }
-        "Pacific:Kanton"{
-            ec{"Kantɔn"}
         }
         "Pacific:Kiritimati"{
             ec{"Kirimatii"}
@@ -1258,9 +1267,7 @@ blo{
             ls{"Garɩɖontǝna gʊnyɩsonolaŋ kaakɔŋkɔŋɔ̀"}
         }
         "meta:Africa_Western"{
-            ld{"Garɩɖontǝna gɩteŋshilelaŋ kaakɔŋkɔŋɔ̀ gafʊbaka"}
-            lg{"Garɩɖontǝna gɩteŋshilelaŋ kaakɔŋkɔŋɔ̀"}
-            ls{"Garɩɖontǝna gɩteŋshilelaŋ kaakɔŋkɔŋɔ̀ ɖeiɖei"}
+            ls{"Garɩɖontǝna gɩteŋshilelaŋ kaakɔŋkɔŋɔ̀"}
         }
         "meta:Alaska"{
             ld{"Alaskaa kaakɔŋkɔŋɔ̀ gafʊbaka"}
@@ -1293,9 +1300,9 @@ blo{
             ls{"Amalɩka kapasifika kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Apia"{
-            ld{"Apiya kaakɔŋkɔŋɔ̀ gafʊbaka"}
-            lg{"Apiya kaakɔŋkɔŋɔ̀"}
-            ls{"Apiya kaakɔŋkɔŋɔ̀ ɖeiɖei"}
+            ld{"Samowa kaakɔŋkɔŋɔ̀ gafʊbaka"}
+            lg{"Samowa kaakɔŋkɔŋɔ̀"}
+            ls{"Samowa kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Arabian"{
             ld{"Galaaributǝna kaakɔŋkɔŋɔ̀ gafʊbaka"}
@@ -1369,7 +1376,7 @@ blo{
             ls{"Brasiliya kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Brunei"{
-            ls{"Brunɛɩ Ɖarusalaam kaakɔŋkɔŋɔ̀"}
+            ls{"Brunɛɩ kaakɔŋkɔŋɔ̀"}
         }
         "meta:Cape_Verde"{
             ld{"Kapfɛɛr kaakɔŋkɔŋɔ̀ gafʊbaka"}
@@ -1393,11 +1400,6 @@ blo{
             ld{"Caɩna kaakɔŋkɔŋɔ̀ gafʊbaka"}
             lg{"Caɩna kaakɔŋkɔŋɔ̀"}
             ls{"Caɩna kaakɔŋkɔŋɔ̀ ɖeiɖei"}
-        }
-        "meta:Choibalsan"{
-            ld{"Koibalsaan kaakɔŋkɔŋɔ̀ gafʊbaka"}
-            lg{"Koibalsaan kaakɔŋkɔŋɔ̀"}
-            ls{"Koibalsaan kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Christmas"{
             ls{"Nowɛl kaAtukǝltǝna kaakɔŋkɔŋɔ̀"}
@@ -1508,6 +1510,9 @@ blo{
         "meta:Guyana"{
             ls{"Guyanaa kaakɔŋkɔŋɔ̀"}
         }
+        "meta:Hawaii"{
+            ls{"Awayɩɩ n’Alewutii kaakɔŋkɔŋɔ̀ ɖeiɖei"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Awayɩɩ n’Alewutii kaakɔŋkɔŋɔ̀ gafʊbaka"}
             lg{"Awayɩɩ n’Alewutii kaakɔŋkɔŋɔ̀"}
@@ -1519,9 +1524,9 @@ blo{
             ls{"Hɔŋ Kɔŋ kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Hovd"{
-            ld{"Hɔfɖǝ kaakɔŋkɔŋɔ̀ gafʊbaka"}
-            lg{"Hɔfɖǝ kaakɔŋkɔŋɔ̀"}
-            ls{"Hɔfɖǝ kaakɔŋkɔŋɔ̀ ɖeiɖei"}
+            ld{"Kɔfɖǝ kaakɔŋkɔŋɔ̀ gafʊbaka"}
+            lg{"Kɔfɖǝ kaakɔŋkɔŋɔ̀"}
+            ls{"Kɔfɖǝ kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:India"{
             ls{"Inɖiya kaakɔŋkɔŋɔ̀"}
@@ -1561,6 +1566,9 @@ blo{
             lg{"Japaŋ kaakɔŋkɔŋɔ̀"}
             ls{"Japaŋ kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
+        "meta:Kazakhstan"{
+            ls{"Kasastan kaakɔŋkɔŋɔ̀"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Kasastan gajakalaŋ kaakɔŋkɔŋɔ̀"}
         }
@@ -1599,9 +1607,6 @@ blo{
             lg{"Makawoo kaakɔŋkɔŋɔ̀"}
             ls{"Makawoo kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
-        "meta:Macquarie"{
-            ls{"Makarii kaAtukǝltǝna kaakɔŋkɔŋɔ̀"}
-        }
         "meta:Magadan"{
             ld{"Magaɖan kaakɔŋkɔŋɔ̀ gafʊbaka"}
             lg{"Magaɖan kaakɔŋkɔŋɔ̀"}
@@ -1626,11 +1631,6 @@ blo{
         }
         "meta:Mawson"{
             ls{"Mɔsɔn kaakɔŋkɔŋɔ̀"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Mɛsik gʊpɛnɛ na gɩteŋshilelaŋ kʊfɔɔ nɩ kaakɔŋkɔŋɔ̀ gafʊbaka"}
-            lg{"Mɛsik gʊpɛnɛ na gɩteŋshilelaŋ kʊfɔɔ nɩ kaakɔŋkɔŋɔ̀"}
-            ls{"Mɛsik gʊpɛnɛ na gɩteŋshilelaŋ kʊfɔɔ nɩ kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Mexico_Pacific"{
             ld{"Mɛsik kapasifika kaakɔŋkɔŋɔ̀ gafʊbaka"}
@@ -1735,10 +1735,10 @@ blo{
             ls{"Pɩtkɛɛn kaBʊtukǝltǝna kaakɔŋkɔŋɔ̀"}
         }
         "meta:Ponape"{
-            ls{"Ponapee kaakɔŋkɔŋɔ̀"}
+            ls{"Poonpei kaakɔŋkɔŋɔ̀"}
         }
         "meta:Pyongyang"{
-            ls{"Pɩyɔŋyaŋ kaakɔŋkɔŋɔ̀"}
+            ls{"Koree gʊnyɩpɛnɛlaŋ kaakɔŋkɔŋɔ̀"}
         }
         "meta:Reunion"{
             ls{"Reeniyɔŋ kaakɔŋkɔŋɔ̀"}
@@ -1752,9 +1752,9 @@ blo{
             ls{"Sakalin kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Samoa"{
-            ld{"Samowa kaakɔŋkɔŋɔ̀ gafʊbaka"}
-            lg{"Samowa kaakɔŋkɔŋɔ̀"}
-            ls{"Samowa kaakɔŋkɔŋɔ̀ ɖeiɖei"}
+            ld{"Samowa Amalɩka kaja kaakɔŋkɔŋɔ̀ gafʊbaka"}
+            lg{"Samowa Amalɩka kaja kaakɔŋkɔŋɔ̀"}
+            ls{"Samowa Amalɩka kaja kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Seychelles"{
             ls{"Seshɛl kaakɔŋkɔŋɔ̀"}
@@ -1778,9 +1778,9 @@ blo{
             ls{"Tahitii kaakɔŋkɔŋɔ̀"}
         }
         "meta:Taipei"{
-            ld{"Taɩpei kaakɔŋkɔŋɔ̀ gafʊbaka"}
-            lg{"Taɩpei kaakɔŋkɔŋɔ̀"}
-            ls{"Taɩpei kaakɔŋkɔŋɔ̀ ɖeiɖei"}
+            ld{"Taɩwan kaakɔŋkɔŋɔ̀ gafʊbaka"}
+            lg{"Taɩwan kaakɔŋkɔŋɔ̀"}
+            ls{"Taɩwan kaakɔŋkɔŋɔ̀ ɖeiɖei"}
         }
         "meta:Tajikistan"{
             ls{"Tajikistan kaakɔŋkɔŋɔ̀"}

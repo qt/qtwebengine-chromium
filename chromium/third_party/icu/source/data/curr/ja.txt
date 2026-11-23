@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 ja{
     Currencies{
         ADP{
@@ -841,7 +841,7 @@ ja{
         }
         RSD{
             "RSD",
-            "ディナール (セルビア)",
+            "セルビア ディナール",
         }
         RUB{
             "RUB",
@@ -1001,7 +1001,7 @@ ja{
         }
         UAH{
             "UAH",
-            "ウクライナ グリブナ",
+            "ウクライナ フリヴニャ",
         }
         UAK{
             "UAK",
@@ -1102,6 +1102,10 @@ ja{
         XCD{
             "EC$",
             "東カリブ ドル",
+        }
+        XCG{
+            "Cg",
+            "カリブ ギルダー",
         }
         XDR{
             "XDR",
@@ -1207,6 +1211,10 @@ ja{
             "ZWD",
             "ジンバブエ ドル (1980–2008)",
         }
+        ZWG{
+            "ZWG",
+            "ジンバブエ ゴールド",
+        }
         ZWL{
             "ZWL",
             "ジンバブエ ドル (2009)",
@@ -1228,6 +1236,12 @@ ja{
         }
         JPY{
             other{"円"}
+        }
+        XCG{
+            other{"カリブ ギルダー"}
+        }
+        ZWG{
+            other{"ジンバブエ ゴールド"}
         }
     }
     CurrencyUnitPatterns{

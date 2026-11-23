@@ -12,14 +12,14 @@
 
 ##############################################################################
 # Keep the following in sync with the version - see common/unicode/uvernum.h
-U_ICUDATA_NAME=icudt74
+U_ICUDATA_NAME=icudt78
 ##############################################################################
 !IF "$(UWP)" == "UWP"
 # Optionally change the name of the data file for the UWP version.
-U_ICUDATA_NAME=icudt74
+U_ICUDATA_NAME=icudt78
 !ENDIF
 U_ICUDATA_ENDIAN_SUFFIX=l
-UNICODE_VERSION=15.1
+UNICODE_VERSION=17.0
 ICU_LIB_TARGET=$(DLL_OUTPUT)\$(U_ICUDATA_NAME).dll
 
 #  ICUMAKE
@@ -243,6 +243,9 @@ COMMON_ICUDATA_ARGUMENTS=$(COMMON_ICUDATA_ARGUMENTS) -u
 !IF "$(CFG)" == "x64\Release" || "$(CFG)" == "x64\Debug"
 COMMON_ICUDATA_ARGUMENTS=$(COMMON_ICUDATA_ARGUMENTS) -a X64
 !ENDIF
+!IF "$(CFG)" == "Release" || "$(CFG)" == "release" || "$(CFG)" == "Debug" || "$(CFG)" == "debug" || "$(CFG)" == "x86\Release" || "$(CFG)" == "x86\Debug"
+COMMON_ICUDATA_ARGUMENTS=$(COMMON_ICUDATA_ARGUMENTS) -a X86
+!ENDIF
 !IF "$(CFG)" == "ARM\Release" || "$(CFG)" == "ARM\Debug"
 COMMON_ICUDATA_ARGUMENTS=$(COMMON_ICUDATA_ARGUMENTS) -a ARM
 !ENDIF
@@ -330,7 +333,7 @@ uni-core-data: GODATA "$(ICUBLD_PKG)\pnames.icu" "$(ICUBLD_PKG)\uprops.icu" "$(I
 # see icu4j-readme.txt
 
 ICU4J_TZDATA="$(ICUOUT)\icu4j\icutzdata.jar"
-ICU4J_DATA_DIRNAME=com\ibm\icu\impl\data\$(U_ICUDATA_NAME)b
+ICU4J_DATA_DIRNAME=com\ibm\icu\impl\data\icudata
 ICU4J_TZDATA_PATHS=$(ICU4J_DATA_DIRNAME)\zoneinfo64.res $(ICU4J_DATA_DIRNAME)\metaZones.res $(ICU4J_DATA_DIRNAME)\timezoneTypes.res $(ICU4J_DATA_DIRNAME)\windowsZones.res
 
 generate-data: GODATA "$(ICUOUT)\$(ICUPKG).dat" uni-core-data

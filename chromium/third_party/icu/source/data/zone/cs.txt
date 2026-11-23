@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 cs{
     zoneStrings{
         "Africa:Abidjan"{
@@ -21,9 +21,6 @@ cs{
         "Africa:Khartoum"{
             ec{"Chartúm"}
         }
-        "Africa:Lome"{
-            ec{"Lomé"}
-        }
         "Africa:Mogadishu"{
             ec{"Mogadišu"}
         }
@@ -39,32 +36,17 @@ cs{
         "Africa:Tripoli"{
             ec{"Tripolis"}
         }
-        "America:Asuncion"{
-            ec{"Asunción"}
-        }
         "America:Bahia"{
             ec{"Bahía"}
         }
         "America:Bahia_Banderas"{
             ec{"Bahia Banderas"}
         }
-        "America:Belem"{
-            ec{"Belém"}
-        }
-        "America:Bogota"{
-            ec{"Bogotá"}
-        }
         "America:Cayman"{
             ec{"Kajmanské ostrovy"}
         }
-        "America:Cordoba"{
-            ec{"Córdoba"}
-        }
         "America:Costa_Rica"{
             ec{"Kostarika"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
         }
         "America:Dominica"{
             ec{"Dominika"}
@@ -78,14 +60,8 @@ cs{
         "America:Martinique"{
             ec{"Martinik"}
         }
-        "America:Mazatlan"{
-            ec{"Mazatlán"}
-        }
         "America:Merida"{
             ec{"Merida"}
-        }
-        "America:Mexico_City"{
-            ec{"Ciudad de México"}
         }
         "America:North_Dakota:Beulah"{
             ec{"Beulah, Severní Dakota"}
@@ -98,15 +74,6 @@ cs{
         }
         "America:Puerto_Rico"{
             ec{"Portoriko"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
-        }
-        "America:Santarem"{
-            ec{"Santarém"}
-        }
-        "America:Sao_Paulo"{
-            ec{"São Paulo"}
         }
         "America:St_Barthelemy"{
             ec{"Svatý Bartoloměj"}
@@ -155,9 +122,6 @@ cs{
         }
         "Asia:Chita"{
             ec{"Čita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Čojbalsan"}
         }
         "Asia:Colombo"{
             ec{"Kolombo"}
@@ -309,9 +273,6 @@ cs{
         "Atlantic:St_Helena"{
             ec{"Svatá Helena"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"koordinovaný světový čas"}
         }
@@ -388,14 +349,8 @@ cs{
         "Europe:Sofia"{
             ec{"Sofie"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Ulyanovsk"{
             ec{"Uljanovsk"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Užhorod"}
         }
         "Europe:Vatican"{
             ec{"Vatikán"}
@@ -408,9 +363,6 @@ cs{
         }
         "Europe:Zagreb"{
             ec{"Záhřeb"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Záporoží"}
         }
         "Europe:Zurich"{
             ec{"Curych"}
@@ -427,17 +379,11 @@ cs{
         "Indian:Kerguelen"{
             ec{"Kerguelenovy ostrovy"}
         }
-        "Indian:Mahe"{
-            ec{"Mahé"}
-        }
         "Indian:Maldives"{
             ec{"Maledivy"}
         }
         "Indian:Mauritius"{
             ec{"Mauricius"}
-        }
-        "Indian:Reunion"{
-            ec{"Réunion"}
         }
         "Pacific:Chatham"{
             ec{"Chathamské ostrovy"}
@@ -449,7 +395,7 @@ cs{
             ec{"Éfaté"}
         }
         "Pacific:Enderbury"{
-            ec{"Enderbury"}
+            ec{"Kanton (ostrov)"}
         }
         "Pacific:Fiji"{
             ec{"Fidži"}
@@ -462,15 +408,9 @@ cs{
         }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
-            sd{"HDT"}
-            sg{"HST"}
-            ss{"HST"}
         }
         "Pacific:Marquesas"{
             ec{"Markézy"}
-        }
-        "Pacific:Noumea"{
-            ec{"Nouméa"}
         }
         "Pacific:Pitcairn"{
             ec{"Pitcairnovy ostrovy"}
@@ -496,9 +436,7 @@ cs{
             ls{"jihoafrický čas"}
         }
         "meta:Africa_Western"{
-            ld{"západoafrický letní čas"}
-            lg{"západoafrický čas"}
-            ls{"západoafrický standardní čas"}
+            ls{"západoafrický čas"}
         }
         "meta:Alaska"{
             ld{"aljašský letní čas"}
@@ -673,11 +611,6 @@ cs{
             lg{"čínský čas"}
             ls{"čínský standardní čas"}
         }
-        "meta:Choibalsan"{
-            ld{"čojbalsanský letní čas"}
-            lg{"čojbalsanský čas"}
-            ls{"čojbalsanský standardní čas"}
-        }
         "meta:Christmas"{
             ls{"čas Vánočního ostrova"}
         }
@@ -789,6 +722,9 @@ cs{
         "meta:Guyana"{
             ls{"guyanský čas"}
         }
+        "meta:Hawaii"{
+            ls{"havajsko-aleutský standardní čas"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"havajsko-aleutský letní čas"}
             lg{"havajsko-aleutský čas"}
@@ -847,6 +783,9 @@ cs{
             lg{"petropavlovsko-kamčatský čas"}
             ls{"petropavlovsko-kamčatský standardní čas"}
         }
+        "meta:Kazakhstan"{
+            ls{"kazachstánský čas"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"východokazachstánský čas"}
         }
@@ -885,9 +824,6 @@ cs{
             lg{"Macajský čas"}
             ls{"Macajský standardní čas"}
         }
-        "meta:Macquarie"{
-            ls{"čas ostrova Macquarie"}
-        }
         "meta:Magadan"{
             ld{"magadanský letní čas"}
             lg{"magadanský čas"}
@@ -912,11 +848,6 @@ cs{
         }
         "meta:Mawson"{
             ls{"čas Mawsonovy stanice"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"severozápadní mexický letní čas"}
-            lg{"severozápadní mexický čas"}
-            ls{"severozápadní mexický standardní čas"}
         }
         "meta:Mexico_Pacific"{
             ld{"mexický pacifický letní čas"}
@@ -1091,6 +1022,11 @@ cs{
         }
         "meta:Truk"{
             ls{"chuukský čas"}
+        }
+        "meta:Turkey"{
+            ld{"Turecký letní čas"}
+            lg{"Turecký čas"}
+            ls{"Turecký standardní čas"}
         }
         "meta:Turkmenistan"{
             ld{"turkmenský letní čas"}

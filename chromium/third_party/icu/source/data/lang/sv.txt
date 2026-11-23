@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 sv{
     Keys{
         calendar{"kalender"}
@@ -14,10 +14,13 @@ sv{
         colStrength{"Sorteringsstyrka"}
         collation{"sorteringsordning"}
         currency{"valuta"}
+        em{"emojipresentation"}
         hc{"12- eller 24-timmarsklocka"}
         lb{"radbrytningstyp"}
+        lw{"radbrytningar inom ord"}
         ms{"enhetssystem"}
         numbers{"siffror"}
+        ss{"meningsgräns efter förkortn."}
         timezone{"Tidszon"}
         va{"Språkvariant"}
         x{"privat"}
@@ -92,6 +95,7 @@ sv{
         bjn{"banjariska"}
         bkm{"bamekon"}
         bla{"siksika"}
+        blo{"anii"}
         bm{"bambara"}
         bn{"bengali"}
         bo{"tibetanska"}
@@ -222,7 +226,7 @@ sv{
         gay{"gayo"}
         gba{"gbaya"}
         gbz{"zoroastrisk dari"}
-        gd{"skotsk gäliska"}
+        gd{"skotsk gaeliska"}
         gez{"etiopiska"}
         gil{"gilbertiska"}
         gl{"galiciska"}
@@ -230,7 +234,6 @@ sv{
         gmh{"medelhögtyska"}
         gn{"guaraní"}
         goh{"fornhögtyska"}
-        gom{"Goa-konkani"}
         gon{"gondi"}
         gor{"gorontalo"}
         got{"gotiska"}
@@ -341,6 +344,7 @@ sv{
         kv{"kome"}
         kw{"korniska"}
         kwk{"kwakʼwala"}
+        kxv{"kuvi"}
         ky{"kirgiziska"}
         la{"latin"}
         lad{"ladino"}
@@ -370,7 +374,6 @@ sv{
         lua{"luba-lulua"}
         lui{"luiseño"}
         lun{"lunda"}
-        luo{"luo"}
         lus{"lushai"}
         luy{"luhya"}
         lv{"lettiska"}
@@ -637,6 +640,7 @@ sv{
         vi{"vietnamesiska"}
         vls{"västflamländska"}
         vmf{"Main-frankiska"}
+        vmw{"makua"}
         vo{"volapük"}
         vot{"votiska"}
         vro{"võru"}
@@ -652,6 +656,7 @@ sv{
         xal{"kalmuckiska"}
         xh{"xhosa"}
         xmf{"mingrelianska"}
+        xnr{"kangri"}
         xog{"lusoga"}
         yao{"kiyao"}
         yap{"japetiska"}
@@ -674,6 +679,12 @@ sv{
         zun{"zuni"}
         zxx{"inget språkligt innehåll"}
         zza{"zazaiska"}
+    }
+    Languages%core{
+        ku{"kurdiska"}
+    }
+    Languages%extension{
+        ku{"kurmandji"}
     }
     Languages%menu{
         ars{"arabiska (najdi)"}
@@ -904,15 +915,37 @@ sv{
             indian{"indisk kalender"}
             islamic{"islamisk kalender"}
             islamic-civil{"islamisk civil kalender"}
+            islamic-rgsa{"islamisk kalender, Saudi-Arabien"}
+            islamic-tbla{"islamisk kalender, astronomisk"}
             islamic-umalqura{"islamisk kalender, Umm al-Qura"}
             iso8601{"ISO 8601-kalender"}
             japanese{"japansk kalender"}
             persian{"persisk kalender"}
             roc{"kinesiska republikens kalender"}
         }
+        calendar%core{
+            buddhist{"buddistisk"}
+            chinese{"kinesisk"}
+            coptic{"koptisk"}
+            dangi{"koreansk"}
+            ethiopic{"etiopisk"}
+            ethiopic-amete-alem{"etiopisk amete-alem"}
+            gregorian{"gregoriansk"}
+            hebrew{"hebreisk"}
+            islamic{"islamisk"}
+            islamic-civil{"islamisk civil"}
+            islamic-umalqura{"islamisk, Umm al-Qura"}
+            japanese{"japansk"}
+            persian{"persisk"}
+            roc{"kinesiska republikens"}
+        }
         cf{
             account{"redovisningsformat"}
             standard{"normalt format"}
+        }
+        cf%core{
+            account{"redovisning"}
+            standard{"normalt"}
         }
         colAlternate{
             non-ignorable{"sortera symboler"}
@@ -947,17 +980,14 @@ sv{
             tertiary{"Sortera accenter/skiftläge/bredd"}
         }
         collation{
-            big5han{"big5-sorteringsordning"}
             compat{"bakåtkompatibel sorteringsordning"}
             dictionary{"ordbokssorteringsordning"}
             ducet{"grundläggande Unicode-sorteringsordning"}
             emoji{"emojisorteringsordning"}
             eor{"sorteringsordning för flerspråkliga europeiska dokument"}
-            gb2312han{"gb2312-sorteringsordning"}
             phonebook{"telefonkatalogssorteringsordning"}
             phonetic{"fonetisk sorteringsordning"}
             pinyin{"pinyin-sorteringsordning"}
-            reformed{"reformerad sorteringsordning"}
             search{"allmän sökning"}
             searchjl{"söksorteringsordning för att söka på inledande Hangul-konsonant"}
             standard{"normal sorteringsordning"}
@@ -966,10 +996,29 @@ sv{
             unihan{"radikal-streck-sorteringsordning"}
             zhuyin{"zhuyin-sorteringsordning"}
         }
+        collation%core{
+            compat{"bakåtkompatibel"}
+            dictionary{"ordbok"}
+            ducet{"grundläggande Unicode"}
+            phonebook{"telefonkatalog"}
+            phonetic{"fonetisk"}
+            pinyin{"pinyin"}
+            search{"sökning"}
+            standard{"normal"}
+            stroke{"streck"}
+            traditional{"traditionell"}
+            unihan{"radikal-streck"}
+            zhuyin{"zhuyin"}
+        }
         d0{
             fwidth{"till helbreda"}
             hwidth{"till halvbreda"}
             npinyin{"Numerisk"}
+        }
+        em%core{
+            default{"standard"}
+            emoji{"emoji"}
+            text{"text"}
         }
         hc{
             h11{"12-timmarsklocka (0–11)"}
@@ -977,10 +1026,27 @@ sv{
             h23{"24-timmarsklocka (0–23)"}
             h24{"24-timmarsklocka (1–24)"}
         }
+        hc%core{
+            h11{"12 (0–11)"}
+            h12{"12 (1–12)"}
+            h23{"24 (0–23)"}
+            h24{"24 (1–24)"}
+        }
         lb{
             loose{"fri radbrytning"}
             normal{"normal radbrytning"}
             strict{"strikt radbrytning"}
+        }
+        lb%core{
+            loose{"fri"}
+            normal{"normal"}
+            strict{"strikt"}
+        }
+        lw%core{
+            breakall{"radbryt alla"}
+            keepall{"behåll alla"}
+            normal{"normal"}
+            phrase{"behåll i fraser"}
         }
         m0{
             bgn{"enligt USA:s geografiska namnkommitté"}
@@ -990,6 +1056,11 @@ sv{
             metric{"metersystem"}
             uksystem{"brittiskt måttsystem"}
             ussystem{"USA:s måttsystem"}
+        }
+        ms%core{
+            metric{"meter"}
+            uksystem{"brittiskt"}
+            ussystem{"USA:s"}
         }
         numbers{
             ahom{"ahom-siffror"}
@@ -1074,6 +1145,10 @@ sv{
             vaii{"vai-siffror"}
             wara{"varang kshiti-siffror"}
             wcho{"wanchosiffror"}
+        }
+        ss%core{
+            none{"av"}
+            standard{"på"}
         }
     }
     Variants{

@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 ckb{
     AuxExemplarCharacters{"[\u200E\u200F ً ٌ ٍ َ ُ ِ ّ ْ ء آ أ ؤ إ ة ث ذ ص ض ط ظ ك ھ ى ي]"}
     ExemplarCharacters{"[ئ ا ب پ ت ج چ ح خ د ر ز ڕ ژ س ش ع غ ف ڤ ق ک گ ل ڵ م ن ه ە و ۆ ی ێ]"}
@@ -35,7 +35,7 @@ ckb{
                 "G y MMMM d, EEEE",
                 "dی MMMMی y G",
                 "G y MMM d",
-                "GGGGG y-MM-dd",
+                "G y-MM-dd",
                 "{1} {0}",
                 "{1} {0}",
                 "{1} {0}",
@@ -174,12 +174,12 @@ ckb{
             }
             eras{
                 abbreviated{
-                    "پێش زایین",
-                    "زایینی",
+                    0{"پێش زایین"}
+                    1{"زایینی"}
                 }
                 abbreviated%variant{
-                    "BCE",
-                    "CE",
+                    0{"BCE"}
+                    1{"CE"}
                 }
             }
             intervalFormats{

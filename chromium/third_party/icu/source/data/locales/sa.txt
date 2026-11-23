@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 sa{
     AuxExemplarCharacters{"[\u200C\u200D ऍ ऑ ॅ ॉ]"}
     ExemplarCharacters{
@@ -18,9 +18,17 @@ sa{
     }
     NumberElements{
         default{"deva"}
+        deva{
+            patterns{
+                accountingFormat%alphaNextToNumber{"¤ #,##0.00"}
+                accountingFormat%noCurrency{"#,##0.00"}
+            }
+        }
         latn{
             patterns{
                 accountingFormat{"¤ #,##0.00"}
+                accountingFormat%alphaNextToNumber{"¤ #,##0.00"}
+                accountingFormat%noCurrency{"#,##0.00"}
                 currencyFormat{"¤#,##,##0.00"}
                 decimalFormat{"#,##,##0.###"}
                 percentFormat{"#,##,##0%"}
@@ -67,7 +75,7 @@ sa{
             }
         }
         gregorian{
-            AmPmMarkers{
+            AmPmMarkersAbbr{
                 "पूर्वाह्न",
                 "अपराह्न",
             }
@@ -142,15 +150,6 @@ sa{
                         "शुक्र",
                         "शनि",
                     }
-                    short{
-                        "Sun",
-                        "Mon",
-                        "Tue",
-                        "Wed",
-                        "Thu",
-                        "Fri",
-                        "Sat",
-                    }
                     wide{
                         "रविवासरः",
                         "सोमवासरः",
@@ -175,8 +174,8 @@ sa{
             }
             eras{
                 abbreviated%variant{
-                    "इ.स.पू.",
-                    "संवत्",
+                    0{"इ.स.पू."}
+                    1{"संवत्"}
                 }
             }
             intervalFormats{

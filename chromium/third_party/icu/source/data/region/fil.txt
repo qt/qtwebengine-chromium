@@ -1,9 +1,9 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 fil{
     Countries{
-        001{"Mundo"}
+        001{"mundo"}
         002{"Africa"}
         003{"Hilagang Amerika"}
         005{"Timog Amerika"}
@@ -85,6 +85,7 @@ fil{
         CN{"China"}
         CO{"Colombia"}
         CP{"Clipperton Island"}
+        CQ{"Sark"}
         CR{"Costa Rica"}
         CU{"Cuba"}
         CV{"Cape Verde"}
@@ -146,7 +147,7 @@ fil{
         IL{"Israel"}
         IM{"Isle of Man"}
         IN{"India"}
-        IO{"Teritoryo sa Karagatan ng British Indian"}
+        IO{"British Indian Ocean Territory"}
         IQ{"Iraq"}
         IR{"Iran"}
         IS{"Iceland"}
@@ -302,7 +303,7 @@ fil{
         IO{"Chagos Archipelago"}
     }
     Countries%short{
-        GB{"U.K."}
+        GB{"UK"}
         UN{"UN"}
         US{"U.S."}
     }

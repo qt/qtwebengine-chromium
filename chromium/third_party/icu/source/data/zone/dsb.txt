@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 dsb{
     zoneStrings{
         "Africa:Accra"{
@@ -39,23 +39,14 @@ dsb{
         "Africa:Porto-Novo"{
             ec{"Porto Novo"}
         }
-        "Africa:Sao_Tome"{
-            ec{"São Tomé"}
-        }
         "Africa:Tripoli"{
             ec{"Tripolis"}
-        }
-        "America:Asuncion"{
-            ec{"Asunción"}
         }
         "America:Bogota"{
             ec{"Bogotá"}
         }
         "America:Cayman"{
             ec{"Kaimaniske kupy"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
         }
         "America:Havana"{
             ec{"Havanna"}
@@ -246,9 +237,6 @@ dsb{
         "Europe:Tirane"{
             ec{"Tirana"}
         }
-        "Europe:Uzhgorod"{
-            ec{"Užgorod"}
-        }
         "Europe:Vatican"{
             ec{"Vatikan"}
         }
@@ -264,9 +252,6 @@ dsb{
         "Europe:Warsaw"{
             ec{"Waršawa"}
         }
-        "Europe:Zaporozhye"{
-            ec{"Saporižja"}
-        }
         "Europe:Zurich"{
             ec{"Zürich"}
         }
@@ -278,9 +263,6 @@ dsb{
         }
         "Indian:Maldives"{
             ec{"Malediwy"}
-        }
-        "Indian:Reunion"{
-            ec{"Réunion"}
         }
         "Pacific:Easter"{
             ec{"Jatšowne kupy"}
@@ -301,9 +283,7 @@ dsb{
             ls{"Pódpołdnjowoafriski cas"}
         }
         "meta:Africa_Western"{
-            ld{"Pódwjacornoafriski lěśojski cas"}
-            lg{"Pódwjacornoafriski cas"}
-            ls{"Pódwjacornoafriski standardny cas"}
+            ls{"Pódwjacornoafriski cas"}
         }
         "meta:Alaska"{
             ld{"Alaskojski lěśojski cas"}
@@ -437,11 +417,6 @@ dsb{
             lg{"Chinski cas"}
             ls{"Chinski standardny cas"}
         }
-        "meta:Choibalsan"{
-            ld{"Choibalsański lěśojski cas"}
-            lg{"Choibalsański cas"}
-            ls{"Choibalsański standardny cas"}
-        }
         "meta:Christmas"{
             ls{"cas Gódownych kupow"}
         }
@@ -556,6 +531,9 @@ dsb{
         "meta:Guyana"{
             ls{"Guyański cas"}
         }
+        "meta:Hawaii"{
+            ls{"Hawaiisko-aleutski standardny cas"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Hawaiisko-aleutski lěśojski cas"}
             lg{"Hawaiisko-aleutski cas"}
@@ -609,6 +587,9 @@ dsb{
             lg{"Japański cas"}
             ls{"Japański standardny cas"}
         }
+        "meta:Kazakhstan"{
+            ls{"kazachiski cas"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Pódzajtšnokazachski cas"}
         }
@@ -639,9 +620,6 @@ dsb{
             lg{"cas kupy Lord-Howe"}
             ls{"Standardny cas kupy Lord-Howe"}
         }
-        "meta:Macquarie"{
-            ls{"cas kupy Macquarie"}
-        }
         "meta:Magadan"{
             ld{"Magadański lěśojski cas"}
             lg{"Magadański cas"}
@@ -666,11 +644,6 @@ dsb{
         }
         "meta:Mawson"{
             ls{"Mawson cas"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Mexiski dłujkowjacorny lěśojski cas"}
-            lg{"Mexiski dłujkowjacorny cas"}
-            ls{"Mexiski dłujkowjacorny standardny cas"}
         }
         "meta:Mexico_Pacific"{
             ld{"Mexiski pacifiski lěśojski cas"}

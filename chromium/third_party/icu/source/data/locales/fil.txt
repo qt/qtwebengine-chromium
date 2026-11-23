@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 fil{
     AuxExemplarCharacters{"[áàâ éèê íìî óòô úùû]"}
     ExemplarCharacters{"[a b c d e f g h i j k l m n ñ {ng} o p q r s t u v w x y z]"}
@@ -17,7 +17,6 @@ fil{
                 accountingFormat%alphaNextToNumber{"¤ #,##0.00;(¤ #,##0.00)"}
                 accountingFormat%noCurrency{"#,##0.00;(#,##0.00)"}
                 currencyFormat{"¤#,##0.00"}
-                currencyFormat%alphaNextToNumber{"¤ #,##0.00"}
             }
             patternsLong{
                 decimalFormat{
@@ -221,6 +220,12 @@ fil{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimePatterns%relative{
+                "{1} 'nang' {0}",
+                "{1} 'nang' {0}",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
             DateTimeSkeletons{
                 "ahmmsszzzz",
                 "ahmmssz",
@@ -236,6 +241,8 @@ fil{
                 Ehm{"E h:mm a"}
                 Ehms{"E h:mm:ss a"}
                 Gy{"y G"}
+                GyM{"M/y G"}
+                GyMEd{"E, M/d/y G"}
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, MMM d, y G"}
                 GyMMMd{"MMM d, y G"}
@@ -244,7 +251,6 @@ fil{
                 MMMEd{"E, MMM d"}
                 MMMMEd{"E, MMMM d"}
                 Md{"M/d"}
-                h{"h a"}
                 hm{"h:mm a"}
                 hms{"h:mm:ss a"}
                 y{"y G"}
@@ -320,16 +326,9 @@ fil{
                     M{"E, MMM d – E, MMM d"}
                     d{"E, MMM d – E, MMM d"}
                 }
-                MMMd{
-                    M{"MMM d – MMM d"}
-                }
                 Md{
                     M{"M/d – M/d"}
                     d{"M/d – M/d"}
-                }
-                h{
-                    a{"h a – h a"}
-                    h{"h–h a"}
                 }
                 hm{
                     a{"h:mm a – h:mm a"}
@@ -340,10 +339,6 @@ fil{
                     a{"h:mm a – h:mm a v"}
                     h{"h:mm–h:mm a v"}
                     m{"h:mm–h:mm a v"}
-                }
-                hv{
-                    a{"h a – h a v"}
-                    h{"h–h a v"}
                 }
                 y{
                     y{"y–y G"}
@@ -423,6 +418,8 @@ fil{
                 Ehm{"E h:mm a"}
                 Ehms{"E h:mm:ss a"}
                 Gy{"y G"}
+                GyM{"M/y G"}
+                GyMEd{"E, M/d/y G"}
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, MMM d, y G"}
                 GyMMMd{"MMM d, y G"}
@@ -431,11 +428,10 @@ fil{
                 MMMEd{"E, MMM d"}
                 MMMMEd{"E, MMMM d"}
                 MMMMW{
-                    one{"'ika'-W 'linggo' 'ng' MMMM"}
+                    one{"'linggo' W 'ng' MMMM"}
                     other{"'linggo' W 'ng' MMMM"}
                 }
                 Md{"M/d"}
-                h{"h a"}
                 hm{"h:mm a"}
                 hms{"h:mm:ss a"}
                 hmsv{"h:mm:ss a v"}
@@ -466,15 +462,6 @@ fil{
                         "Biy",
                         "Sab",
                     }
-                    short{
-                        "Li",
-                        "Lu",
-                        "Ma",
-                        "Mi",
-                        "Hu",
-                        "Bi",
-                        "Sa",
-                    }
                     wide{
                         "Linggo",
                         "Lunes",
@@ -500,19 +487,10 @@ fil{
             dayPeriod{
                 format{
                     abbreviated{
-                        afternoon1{"tanghali"}
+                        afternoon1{"ng hapon"}
                         evening1{"ng gabi"}
                         midnight{"hatinggabi"}
-                        morning1{"nang umaga"}
-                        morning2{"madaling-araw"}
-                        night1{"ng gabi"}
-                        noon{"tanghaling-tapat"}
-                    }
-                    narrow{
-                        afternoon1{"sa hapon"}
-                        evening1{"sa gabi"}
-                        midnight{"hatinggabi"}
-                        morning1{"umaga"}
+                        morning1{"ng umaga"}
                         morning2{"madaling-araw"}
                         night1{"ng gabi"}
                         noon{"tanghaling-tapat"}
@@ -526,31 +504,24 @@ fil{
                         morning2{"madaling-araw"}
                         night1{"gabi"}
                     }
-                    wide{
-                        afternoon1{"hapon"}
-                        evening1{"gabi"}
-                        morning1{"umaga"}
-                        morning2{"madaling-araw"}
-                        night1{"gabi"}
-                    }
                 }
             }
             eras{
                 abbreviated{
-                    "BC",
-                    "AD",
+                    0{"BC"}
+                    1{"AD"}
                 }
                 abbreviated%variant{
-                    "BCE",
-                    "CE",
+                    0{"BCE"}
+                    1{"CE"}
                 }
                 wide{
-                    "Before Christ",
-                    "Anno Domini",
+                    0{"Before Christ"}
+                    1{"Anno Domini"}
                 }
                 wide%variant{
-                    "Before Common Era",
-                    "Common Era",
+                    0{"Before Common Era"}
+                    1{"Common Era"}
                 }
             }
             intervalFormats{
@@ -613,16 +584,9 @@ fil{
                     M{"E, MMM d – E, MMM d"}
                     d{"E, MMM d – E, MMM d"}
                 }
-                MMMd{
-                    M{"MMM d – MMM d"}
-                }
                 Md{
                     M{"M/d – M/d"}
                     d{"M/d – M/d"}
-                }
-                h{
-                    a{"h a – h a"}
-                    h{"h–h a"}
                 }
                 hm{
                     a{"h:mm a – h:mm a"}
@@ -633,10 +597,6 @@ fil{
                     a{"h:mm a – h:mm a v"}
                     h{"h:mm–h:mm a v"}
                     m{"h:mm–h:mm a v"}
-                }
-                hv{
-                    a{"h a – h a v"}
-                    h{"h–h a v"}
                 }
                 yM{
                     M{"M/y – M/y"}
@@ -826,8 +786,8 @@ fil{
         roc{
             eras{
                 abbreviated{
-                    "Bago ang R.O.C.",
-                    "Minguo",
+                    0{"Bago ang R.O.C."}
+                    1{"Minguo"}
                 }
             }
         }
@@ -969,7 +929,11 @@ fil{
             relativeTime{
                 future{
                     one{"sa {0} Biy."}
-                    other{"sa {0} (na) Biyernes"}
+                    other{"sa {0} Biy"}
+                }
+                past{
+                    one{"sa {0} (na) Biy ang nakalipas"}
+                    other{"{0} (na) Biy ang nakalipas"}
                 }
             }
         }
@@ -1439,19 +1403,6 @@ fil{
             lenient{
                 "[\\- ‑ . /]",
                 "[\\: ∶]",
-            }
-        }
-        general{
-            lenient{
-                "[.．․﹒ 。｡︒]",
-                "['＇’ ՚ ᾽᾿ ʼ]",
-                "[%％﹪ ٪]",
-                "[‰ ؉]",
-                "[\$＄﹩]",
-                "[£ ₤]",
-                "[¥￥]",
-                "[₩￦]",
-                "[₹ ₨ {Rp} {Rs}]",
             }
         }
         number{

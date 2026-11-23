@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 ar{
     Currencies{
         ADP{
@@ -955,6 +955,10 @@ ar{
             "EC$",
             "دولار شرق الكاريبي",
         }
+        XCG{
+            "Cg.",
+            "غيلدر كاريبي",
+        }
         XDR{
             "XDR",
             "حقوق السحب الخاصة",
@@ -1038,6 +1042,10 @@ ar{
         ZWD{
             "ZWD",
             "دولار زمبابوي",
+        }
+        ZWG{
+            "ZWG",
+            "ذهب زيمبابوي",
         }
         ZWL{
             "ZWL",
@@ -1205,6 +1213,14 @@ ar{
             two{"ديناران تونسيان"}
             zero{"دينار تونسي"}
         }
+        XCG{
+            few{"غيلدر كاريبي"}
+            many{"غيلدر كاريبي"}
+            one{"غيلدر كاريبي"}
+            other{"غيلدر كاريبي"}
+            two{"غيلدر كاريبي"}
+            zero{"غيلدر كاريبي"}
+        }
         XXX{
             few{"(عملة غير معروفة)"}
             many{"(عملة غير معروفة)"}
@@ -1213,13 +1229,13 @@ ar{
             two{"(عملة غير معروفة)"}
             zero{"(عملة غير معروفة)"}
         }
-    }
-    CurrencyUnitPatterns{
-        few{"{0} {1}"}
-        many{"{0} {1}"}
-        one{"{0} {1}"}
-        other{"{0} {1}"}
-        two{"{0} {1}"}
-        zero{"{0} {1}"}
+        ZWG{
+            few{"ذهب زيمبابوي"}
+            many{"ذهب زيمبابوي"}
+            one{"ذهب زيمبابوي"}
+            other{"ذهب زيمبابوي"}
+            two{"ذهب زيمبابوي"}
+            zero{"ذهب زيمبابوي"}
+        }
     }
 }

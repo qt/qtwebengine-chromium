@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 nn{
     %%Parent{"no"}
     units{
@@ -71,6 +71,11 @@ nn{
                 one{"{0} omdreiing"}
                 other{"{0} omdreiingar"}
             }
+            steradian{
+                dnam{"steradianar"}
+                one{"{0} steradian"}
+                other{"{0} steradianar"}
+            }
         }
         area{
             square-inch{
@@ -101,7 +106,12 @@ nn{
             millimole-per-liter{
                 gender{"neuter"}
             }
-            permillion{
+            part{
+                dnam{"delar"}
+                one{"{0} del"}
+                other{"{0} delar"}
+            }
+            part-per-1e6{
                 case{
                     genitive{
                         one{"{0} del per millions"}
@@ -109,8 +119,19 @@ nn{
                     }
                 }
                 dnam{"delar per million"}
-                one{"{0} milliondel"}
-                other{"{0} milliondelar"}
+                one{"{0} del per million"}
+                other{"{0} delar per million"}
+            }
+            part-per-1e9{
+                case{
+                    genitive{
+                        one{"{0} del per milliards"}
+                        other{"{0} delar per milliards"}
+                    }
+                }
+                dnam{"delar per milliard"}
+                one{"{0} del per milliard"}
+                other{"{0} delar per milliard"}
             }
         }
         consumption{
@@ -207,6 +228,9 @@ nn{
                 one{"{0} nanosekund"}
                 other{"{0} nanosekund"}
             }
+            night{
+                gender{"feminine"}
+            }
             second{
                 case{
                     genitive{
@@ -260,6 +284,11 @@ nn{
                 one{"{0} kalori"}
                 other{"{0} kaloriar"}
             }
+            calorie-it{
+                dnam{"kaloriar [IT]"}
+                one{"{0} kalori [IT]"}
+                other{"{0} kaloriar [IT]"}
+            }
             foodcalorie{
                 dnam{"kaloriar"}
                 one{"{0} kalori"}
@@ -276,6 +305,12 @@ nn{
                 other{"{0} joule"}
             }
             kilocalorie{
+                case{
+                    genitive{
+                        one{"{0} kilokaloris"}
+                        other{"{0} kilokaloriers"}
+                    }
+                }
                 dnam{"kilokaloriar"}
                 one{"{0} kilokalori"}
                 other{"{0} kilokaloriar"}
@@ -375,6 +410,12 @@ nn{
                 gender{"feminine"}
             }
             point{
+                case{
+                    genitive{
+                        one{"{0} typografisk punkts"}
+                        other{"{0} typografiske punkts"}
+                    }
+                }
                 dnam{"typografiske punkt"}
                 one{"{0} typografisk punkt"}
                 other{"{0} typografiske punkt"}
@@ -397,7 +438,6 @@ nn{
         }
         mass{
             earth-mass{
-                dnam{"jordmassar"}
                 one{"{0} jordmasse"}
                 other{"{0} jordmassar"}
             }
@@ -516,6 +556,11 @@ nn{
             }
             fluid-ounce-imperial{
                 gender{"feminine"}
+            }
+            fluid-ounce-metric{
+                dnam{"metriske væskeunsar"}
+                one{"{0} metrisk væskeunse"}
+                other{"{0} metriske væskeunsar"}
             }
             gallon-imperial{
                 per{"{0} per britiske gallon"}
@@ -669,12 +714,12 @@ nn{
                 per{"{0}/mi²"}
             }
         }
-        compound{
-            times{"{0}{1}"}
-        }
         concentr{
             millimole-per-liter{
                 dnam{"mmol/l"}
+            }
+            part-per-1e9{
+                dnam{"delar/milliard"}
             }
         }
         consumption{
@@ -811,6 +856,9 @@ nn{
             }
         }
         mass{
+            earth-mass{
+                dnam{"jordmassar"}
+            }
             solar-mass{
                 dnam{"solmassar"}
             }

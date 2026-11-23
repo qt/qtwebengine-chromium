@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 km{
     units{
         acceleration{
@@ -113,12 +113,16 @@ km{
                 dnam{"មិល្លីម៉ូលក្នុងមួយលីត្រ"}
                 other{"{0} មិល្លីម៉ូលក្នុងមួយលីត្រ"}
             }
-            percent{
-                other{"{0} ភាគរយ"}
-            }
-            permillion{
+            part-per-1e6{
                 dnam{"ផ្នែកក្នុងមួយលាន"}
                 other{"{0} ផ្នែកក្នុងមួយលាន"}
+            }
+            part-per-1e9{
+                dnam{"ផ្នែកក្នុងមួយប៊ីលាន"}
+                other{"{0} ផ្នែកក្នុងមួយប៊ីលាន"}
+            }
+            percent{
+                other{"{0} ភាគរយ"}
             }
         }
         consumption{
@@ -215,6 +219,9 @@ km{
             nanosecond{
                 other{"{0} ណាណូវិនាទី"}
             }
+            night{
+                per{"{0} ក្នុងមួយយប់"}
+            }
             second{
                 per{"{0} ក្នុង​មួយ​វិនាទី"}
             }
@@ -240,6 +247,10 @@ km{
             }
         }
         energy{
+            becquerel{
+                dnam{"ប៊ែកគ័ររែល"}
+                other{"{0} ប៊ែកគ័ររែល"}
+            }
             british-thermal-unit{
                 dnam{"ឯកតាកម្ដៅអង់គ្លេស"}
                 other{"{0} ឯកតាកម្ដៅអង់គ្លេស"}
@@ -614,6 +625,10 @@ km{
                 dnam{"អោន​វត្ថុ​រាវ"}
                 other{"{0} អោន​វត្ថុ​រាវ"}
             }
+            fluid-ounce-metric{
+                dnam{"អោនស៍រាវម៉ែត្រ"}
+                other{"{0} អោនស៍រាវម៉ែត្រ"}
+            }
             gallon{
                 dnam{"ហ្គាឡុង"}
                 other{"{0} ហ្គាឡុង"}
@@ -703,6 +718,9 @@ km{
                 dnam{"ម៉ូល"}
                 other{"{0} ម៉ូល"}
             }
+            part-per-1e9{
+                other{"{0}ppb"}
+            }
             percent{
                 dnam{"%"}
             }
@@ -716,9 +734,6 @@ km{
             }
         }
         duration{
-            decade{
-                other{"{0} ទ.វ."}
-            }
             quarter{
                 other{"{0} ត្រី"}
             }
@@ -763,7 +778,7 @@ km{
         }
         power{
             horsepower{
-                other{"{0} សេះ"}
+                other{"{0}hp"}
             }
             kilowatt{
                 other{"{0} គ.វ."}
@@ -866,6 +881,9 @@ km{
                 dnam{"មិល្លីម៉ូល/លីត្រ"}
                 other{"{0} ម.ម៉ូល/លី"}
             }
+            part-per-1e9{
+                dnam{"ផ្នែក/ប៊ីលាន"}
+            }
             percent{
                 dnam{"ភាគរយ"}
             }
@@ -928,6 +946,11 @@ km{
             }
             nanosecond{
                 dnam{"ណាណូវិនាទី"}
+            }
+            night{
+                dnam{"យប់"}
+                other{"{0} យប់"}
+                per{"{0}/យប់"}
             }
             quarter{
                 dnam{"ត្រីមាស"}
@@ -1075,6 +1098,10 @@ km{
         speed{
             kilometer-per-hour{
                 other{"{0} kph"}
+            }
+            light-speed{
+                dnam{"ពន្លឺ"}
+                other{"{0} ពន្លឺ"}
             }
             meter-per-second{
                 dnam{"ម៉ែត្រ​/​វិនាទី"}

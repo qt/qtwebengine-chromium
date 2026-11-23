@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 is{
     Currencies{
         ADP{
@@ -859,6 +859,10 @@ is{
             "EC$",
             "austurkarabískur dalur",
         }
+        XCG{
+            "XCG",
+            "Karíbahafsgyllini",
+        }
         XDR{
             "XDR",
             "Sérstök dráttarréttindi",
@@ -914,6 +918,10 @@ is{
         ZWD{
             "ZWD",
             "Simbabveskur dalur",
+        }
+        ZWG{
+            "ZWG",
+            "simbabveskt gold",
         }
     }
     Currencies%narrow{
@@ -1039,6 +1047,10 @@ is{
         CHF{
             one{"svissneskur franki"}
             other{"svissneskir frankar"}
+        }
+        CLF{
+            one{"síleskt Unidad de Fomento"}
+            other{"síleskt Unidad de Fomento"}
         }
         CLP{
             one{"síleskur pesi"}
@@ -1556,6 +1568,10 @@ is{
             one{"austurkarabískur dalur"}
             other{"austurkarabískir dalir"}
         }
+        XCG{
+            one{"Karíbahafsgyllini"}
+            other{"Karíbahafsgyllini"}
+        }
         XOF{
             one{"vesturafrískur franki"}
             other{"vesturafrískir frankar"}
@@ -1580,9 +1596,9 @@ is{
             one{"sambísk kvaka"}
             other{"sambískar kvökur"}
         }
-    }
-    CurrencyUnitPatterns{
-        one{"{0} {1}"}
-        other{"{0} {1}"}
+        ZWG{
+            one{"simbabveskt gold"}
+            other{"simbabveskt gold"}
+        }
     }
 }

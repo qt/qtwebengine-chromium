@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 tk{
     zoneStrings{
         "Africa:Abidjan"{
@@ -192,6 +192,9 @@ tk{
         "America:Costa_Rica"{
             ec{"Kosta-Rika"}
         }
+        "America:Coyhaique"{
+            ec{"Koýýaik"}
+        }
         "America:Creston"{
             ec{"Kreston"}
         }
@@ -357,9 +360,6 @@ tk{
         "America:Ojinaga"{
             ec{"Ohinaga"}
         }
-        "America:Pangnirtung"{
-            ec{"Pangnirtang"}
-        }
         "America:Phoenix"{
             ec{"Feniks"}
         }
@@ -378,9 +378,6 @@ tk{
         "America:Punta_Arenas"{
             ec{"Punta-Arenas"}
         }
-        "America:Rainy_River"{
-            ec{"Reýni-Riwer"}
-        }
         "America:Rankin_Inlet"{
             ec{"Rankin-Inlet"}
         }
@@ -395,9 +392,6 @@ tk{
         }
         "America:Rio_Branco"{
             ec{"Riu-Branku"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santa-Izabel"}
         }
         "America:Santiago"{
             ec{"Santýago"}
@@ -438,9 +432,6 @@ tk{
         "America:Thule"{
             ec{"Tule"}
         }
-        "America:Thunder_Bay"{
-            ec{"Tander-Beý"}
-        }
         "America:Tijuana"{
             ec{"Tihuana"}
         }
@@ -452,9 +443,6 @@ tk{
         }
         "America:Yakutat"{
             ec{"Ýakutat"}
-        }
-        "America:Yellowknife"{
-            ec{"Ýellounaýf"}
         }
         "Antarctica:Casey"{
             ec{"Keýsi"}
@@ -518,9 +506,6 @@ tk{
         }
         "Asia:Chita"{
             ec{"Çita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Çoýbalsan"}
         }
         "Asia:Colombo"{
             ec{"Kolombo"}
@@ -702,9 +687,6 @@ tk{
         "Australia:Broken_Hill"{
             ec{"Broken-Hil"}
         }
-        "Australia:Currie"{
-            ec{"Kerri"}
-        }
         "Australia:Eucla"{
             ec{"Ýukla"}
         }
@@ -831,14 +813,8 @@ tk{
         "Europe:Tallinn"{
             ec{"Tallin"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Ulyanovsk"{
             ec{"Ulýanowsk"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Užgorod"}
         }
         "Europe:Vaduz"{
             ec{"Waduz"}
@@ -857,9 +833,6 @@ tk{
         }
         "Europe:Warsaw"{
             ec{"Warşawa"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Zaporožýe"}
         }
         "Europe:Zurich"{
             ec{"Sýurih"}
@@ -910,7 +883,7 @@ tk{
             ec{"Pasha adasy"}
         }
         "Pacific:Enderbury"{
-            ec{"Enderberi"}
+            ec{"Kanton adasy"}
         }
         "Pacific:Galapagos"{
             ec{"Galapagos adalary"}
@@ -923,9 +896,6 @@ tk{
         }
         "Pacific:Honolulu"{
             ec{"Gonolulu"}
-        }
-        "Pacific:Johnston"{
-            ec{"Jonston"}
         }
         "Pacific:Kosrae"{
             ec{"Kosraýe"}
@@ -969,6 +939,11 @@ tk{
         "Pacific:Wallis"{
             ec{"Uollis"}
         }
+        "meta:Acre"{
+            ld{"Akri tomusky wagty"}
+            lg{"Akri wagty"}
+            ls{"Akri standart wagty"}
+        }
         "meta:Afghanistan"{
             ls{"Owganystan wagty"}
         }
@@ -982,9 +957,7 @@ tk{
             ls{"Günorta Afrika standart wagty"}
         }
         "meta:Africa_Western"{
-            ld{"Günbatar Afrika tomusky wagty"}
-            lg{"Günbatar Afrika wagty"}
-            ls{"Günbatar Afrika standart wagty"}
+            ls{"Günbatar Afrika wagty"}
         }
         "meta:Alaska"{
             ld{"Alýaska tomusky wagty"}
@@ -1017,6 +990,7 @@ tk{
             ls{"Demirgazyk Amerika Ýuwaş umman standart wagty"}
         }
         "meta:Anadyr"{
+            ld{"Anadyr tomusky wagty"}
             lg{"Anadyr wagty"}
         }
         "meta:Apia"{
@@ -1120,11 +1094,6 @@ tk{
             ld{"Hytaý tomusky wagty"}
             lg{"Hytaý wagty"}
             ls{"Hytaý standart wagty"}
-        }
-        "meta:Choibalsan"{
-            ld{"Çoýbalsan tomusky wagt"}
-            lg{"Çoýbalsan wagty"}
-            ls{"Çoýbalsan standart wagty"}
         }
         "meta:Christmas"{
             ls{"Roždestwo adasy wagty"}
@@ -1231,6 +1200,9 @@ tk{
         "meta:Guyana"{
             ls{"Gaýana wagty"}
         }
+        "meta:Hawaii"{
+            ls{"Gawaý-Aleut standart wagty"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Gawaý-Aleut tomusky wagty"}
             lg{"Gawaý-Aleut wagty"}
@@ -1285,7 +1257,11 @@ tk{
             ls{"Ýaponiýa standart wagty"}
         }
         "meta:Kamchatka"{
+            ld{"Kamçatka tomusky wagty"}
             lg{"Petropavlowsk-Kamçatskiý wagty"}
+        }
+        "meta:Kazakhstan"{
+            ls{"Gazagystan wagty"}
         }
         "meta:Kazakhstan_Eastern"{
             ls{"Gündogar Gazagystan wagty"}
@@ -1317,9 +1293,6 @@ tk{
             lg{"Lord-Hau wagty"}
             ls{"Lord-Hau standart wagty"}
         }
-        "meta:Macquarie"{
-            ls{"Makkuori adasy wagty"}
-        }
         "meta:Magadan"{
             ld{"Magadan tomusky wagty"}
             lg{"Magadan wagty"}
@@ -1344,11 +1317,6 @@ tk{
         }
         "meta:Mawson"{
             ls{"Mouson wagty"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Demirgazyk-günbatar Meksika tomusky wagty"}
-            lg{"Demirgazyk-günbatar Meksika wagty"}
-            ls{"Demirgazyk-günbatar Meksika standart wagty"}
         }
         "meta:Mexico_Pacific"{
             ld{"Meksikan Ýuwaş umman tomusky wagty"}
@@ -1467,6 +1435,7 @@ tk{
             ls{"Sahalin standart wagty"}
         }
         "meta:Samara"{
+            ld{"Samara tomusky wagty"}
             lg{"Samara wagty"}
         }
         "meta:Samoa"{

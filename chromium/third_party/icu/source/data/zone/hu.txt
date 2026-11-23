@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 hu{
     zoneStrings{
         "Africa:Addis_Ababa"{
@@ -10,7 +10,7 @@ hu{
             ec{"Algír"}
         }
         "Africa:Asmera"{
-            ec{"Asmera"}
+            ec{"Aszmara"}
         }
         "Africa:Cairo"{
             ec{"Kairó"}
@@ -30,62 +30,23 @@ hu{
         "Africa:Malabo"{
             ec{"Malabó"}
         }
-        "Africa:Sao_Tome"{
-            ec{"São Tomé"}
-        }
         "Africa:Tunis"{
             ec{"Tunisz"}
-        }
-        "America:Araguaina"{
-            ec{"Araguaína"}
-        }
-        "America:Argentina:Rio_Gallegos"{
-            ec{"Río Gallegos"}
-        }
-        "America:Argentina:Tucuman"{
-            ec{"Tucumán"}
-        }
-        "America:Asuncion"{
-            ec{"Asunción"}
         }
         "America:Bahia_Banderas"{
             ec{"Bahia Banderas"}
         }
-        "America:Belem"{
-            ec{"Belém"}
-        }
-        "America:Bogota"{
-            ec{"Bogotá"}
-        }
         "America:Cayman"{
             ec{"Kajmán-szigetek"}
         }
-        "America:Cordoba"{
-            ec{"Córdoba"}
-        }
-        "America:Cuiaba"{
-            ec{"Cuiabá"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
-        }
         "America:Dominica"{
             ec{"Dominika"}
-        }
-        "America:Eirunepe"{
-            ec{"Eirunepé"}
         }
         "America:El_Salvador"{
             ec{"Salvador"}
         }
         "America:Havana"{
             ec{"Havanna"}
-        }
-        "America:Maceio"{
-            ec{"Maceió"}
-        }
-        "America:Mazatlan"{
-            ec{"Mazatlán"}
         }
         "America:Mexico_City"{
             ec{"Mexikóváros"}
@@ -101,12 +62,6 @@ hu{
         }
         "America:Rio_Branco"{
             ec{"Río Branco"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
-        }
-        "America:Sao_Paulo"{
-            ec{"São Paulo"}
         }
         "America:St_Barthelemy"{
             ec{"Saint-Barthélemy"}
@@ -155,9 +110,6 @@ hu{
         }
         "Asia:Chita"{
             ec{"Csita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Csojbalszan"}
         }
         "Asia:Damascus"{
             ec{"Damaszkusz"}
@@ -327,9 +279,6 @@ hu{
         "Atlantic:St_Helena"{
             ec{"Szent Ilona"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"koordinált világidő"}
         }
@@ -356,9 +305,6 @@ hu{
         }
         "Europe:Bucharest"{
             ec{"Bukarest"}
-        }
-        "Europe:Busingen"{
-            ec{"Büsingen"}
         }
         "Europe:Copenhagen"{
             ec{"Koppenhága"}
@@ -429,14 +375,8 @@ hu{
         "Europe:Tallinn"{
             ec{"Tallin"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Ulyanovsk"{
             ec{"Uljanovszk"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Ungvár"}
         }
         "Europe:Vatican"{
             ec{"Vatikán"}
@@ -453,9 +393,6 @@ hu{
         "Europe:Zagreb"{
             ec{"Zágráb"}
         }
-        "Europe:Zaporozhye"{
-            ec{"Zaporizzsja"}
-        }
         "Europe:Zurich"{
             ec{"Zürich"}
         }
@@ -471,9 +408,6 @@ hu{
         "Indian:Maldives"{
             ec{"Maldív-szigetek"}
         }
-        "Indian:Reunion"{
-            ec{"Réunion"}
-        }
         "Pacific:Chatham"{
             ec{"Chatham-szigetek"}
         }
@@ -481,7 +415,7 @@ hu{
             ec{"Húsvét-szigetek"}
         }
         "Pacific:Enderbury"{
-            ec{"Enderbury"}
+            ec{"Canton-sziget"}
         }
         "Pacific:Fiji"{
             ec{"Fidzsi"}
@@ -543,9 +477,7 @@ hu{
             ls{"dél-afrikai téli idő"}
         }
         "meta:Africa_Western"{
-            ld{"nyugat-afrikai nyári idő"}
-            lg{"nyugat-afrikai időzóna"}
-            ls{"nyugat-afrikai téli idő"}
+            ls{"nyugat-afrikai időzóna"}
         }
         "meta:Alaska"{
             ld{"alaszkai nyári idő"}
@@ -702,11 +634,6 @@ hu{
             lg{"kínai idő"}
             ls{"kínai téli idő"}
         }
-        "meta:Choibalsan"{
-            ld{"csojbalszani nyári idő"}
-            lg{"csojbalszani idő"}
-            ls{"csojbalszani téli idő"}
-        }
         "meta:Christmas"{
             ls{"karácsony-szigeti idő"}
         }
@@ -747,7 +674,7 @@ hu{
         }
         "meta:Europe_Central"{
             ld{"közép-európai nyári idő"}
-            lg{"közép-európai időzóna"}
+            lg{"közép-európai idő"}
             ls{"közép-európai téli idő"}
             sd{"CEST"}
             sg{"CET"}
@@ -825,6 +752,9 @@ hu{
         "meta:Guyana"{
             ls{"guyanai téli idő"}
         }
+        "meta:Hawaii"{
+            ls{"hawaii-aleuti téli idő"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"hawaii-aleuti nyári idő"}
             lg{"hawaii-aleuti időzóna"}
@@ -883,6 +813,9 @@ hu{
             lg{"Petropavlovszk-kamcsatkai idő"}
             ls{"Petropavlovszk-kamcsatkai zónaidő"}
         }
+        "meta:Kazakhstan"{
+            ls{"kazahsztáni idő"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"kelet-kazahsztáni idő"}
         }
@@ -921,9 +854,6 @@ hu{
             lg{"Macaui idő"}
             ls{"Macaui zónaidő"}
         }
-        "meta:Macquarie"{
-            ls{"macquarie-szigeti téli idő"}
-        }
         "meta:Magadan"{
             ld{"magadáni nyári idő"}
             lg{"magadáni idő"}
@@ -948,11 +878,6 @@ hu{
         }
         "meta:Mawson"{
             ls{"mawsoni idő"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"északnyugat-mexikói nyári idő"}
-            lg{"északnyugat-mexikói idő"}
-            ls{"északnyugat-mexikói zónaidő"}
         }
         "meta:Mexico_Pacific"{
             ld{"mexikói csendes-óceáni nyári idő"}
@@ -1127,6 +1052,11 @@ hu{
         }
         "meta:Truk"{
             ls{"truki idő"}
+        }
+        "meta:Turkey"{
+            ld{"Törökországi nyári idő"}
+            lg{"Törökországi idő"}
+            ls{"Törökországi zónaidő"}
         }
         "meta:Turkmenistan"{
             ld{"türkmenisztáni nyári idő"}

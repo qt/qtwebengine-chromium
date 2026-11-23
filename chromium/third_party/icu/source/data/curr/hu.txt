@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 hu{
     Currencies{
         ADP{
@@ -265,7 +265,7 @@ hu{
         }
         CSD{
             "CSD",
-            "szerb dinár",
+            "szerb dinár (2002–2006)",
         }
         CSK{
             "CSK",
@@ -437,7 +437,7 @@ hu{
         }
         HNL{
             "HNL",
-            "hodurasi lempira",
+            "hondurasi lempira",
         }
         HRD{
             "HRD",
@@ -481,7 +481,7 @@ hu{
         }
         IRR{
             "IRR",
-            "iráni rial",
+            "iráni riál",
         }
         ISK{
             "ISK",
@@ -617,7 +617,7 @@ hu{
         }
         MKD{
             "MKD",
-            "macedon dínár",
+            "macedón dénár",
         }
         MKN{
             "MKN",
@@ -729,7 +729,7 @@ hu{
         }
         OMR{
             "OMR",
-            "ománi rial",
+            "ománi riál",
         }
         PAB{
             "PAB",
@@ -777,7 +777,7 @@ hu{
         }
         QAR{
             "QAR",
-            "katari rial",
+            "katari riál",
         }
         RHD{
             "RHD",
@@ -793,7 +793,7 @@ hu{
         }
         RSD{
             "RSD",
-            "szerb dínár",
+            "szerb dinár",
         }
         RUB{
             "RUB",
@@ -809,7 +809,7 @@ hu{
         }
         SAR{
             "SAR",
-            "szaúdi riyal",
+            "szaúdi riál",
         }
         SBD{
             "SBD",
@@ -857,7 +857,7 @@ hu{
         }
         SLL{
             "SLL",
-            "Sierra Leone-i leone (1964—2022)",
+            "Sierra Leone-i leone (1964–2022)",
         }
         SOS{
             "SOS",
@@ -989,11 +989,11 @@ hu{
         }
         UYU{
             "UYU",
-            "uruguay-i peso",
+            "uruguayi peso",
         }
         UZS{
             "UZS",
-            "üzbegisztáni szum",
+            "üzbegisztáni szom",
         }
         VEB{
             "VEB",
@@ -1055,6 +1055,10 @@ hu{
             "XCD",
             "kelet-karibi dollár",
         }
+        XCG{
+            "Cg.",
+            "karibi forint",
+        }
         XDR{
             "XDR",
             "Special Drawing Rights",
@@ -1105,7 +1109,7 @@ hu{
         }
         YER{
             "YER",
-            "jemeni rial",
+            "jemeni riál",
         }
         YUD{
             "YUD",
@@ -1150,6 +1154,10 @@ hu{
         ZWD{
             "ZWD",
             "Zimbabwei dollár (1980–2008)",
+        }
+        ZWG{
+            "ZWG",
+            "zimbabwei arany",
         }
         ZWL{
             "ZWL",
@@ -1277,9 +1285,9 @@ hu{
             one{"Uruguayi peso (1975–1993)"}
             other{"Uruguayi peso (1975–1993)"}
         }
-        UYU{
-            one{"uruguayi peso"}
-            other{"uruguayi peso"}
+        XCG{
+            one{"karibi forint"}
+            other{"karibi forint"}
         }
         XEU{
             one{"Európai pénznemegység"}
@@ -1309,9 +1317,9 @@ hu{
             one{"jugoszláv konvertibilis dinár (1990–1992)"}
             other{"jugoszláv konvertibilis dinár (1990–1992)"}
         }
-    }
-    CurrencyUnitPatterns{
-        one{"{0} {1}"}
-        other{"{0} {1}"}
+        ZWG{
+            one{"zimbabwei arany"}
+            other{"zimbabwei arany"}
+        }
     }
 }

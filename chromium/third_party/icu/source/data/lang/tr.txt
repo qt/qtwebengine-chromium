@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 tr{
     Keys{
         calendar{"Takvim"}
@@ -14,10 +14,13 @@ tr{
         colStrength{"Sıralama Gücü"}
         collation{"Sıralama Düzeni"}
         currency{"Para Birimi"}
+        em{"Emoji Gösterimi"}
         hc{"Saat Sistemi (12 - 24)"}
         lb{"Satır Sonu Stili"}
+        lw{"Sözcükler İçindeki Satır Sonları"}
         ms{"Ölçü Sistemi"}
         numbers{"Rakamlar"}
+        ss{"Kısaltmadan Sonra Cümle Sonu"}
         timezone{"Saat Dilimi"}
         va{"Yerel Varyant"}
         x{"Özel Kullanım"}
@@ -93,6 +96,7 @@ tr{
         bjn{"Banjar Dili"}
         bkm{"Kom"}
         bla{"Karaayak dili"}
+        blo{"Aniice"}
         bm{"Bambara"}
         bn{"Bengalce"}
         bo{"Tibetçe"}
@@ -231,7 +235,6 @@ tr{
         gmh{"Ortaçağ Yüksek Almancası"}
         gn{"Guarani dili"}
         goh{"Eski Yüksek Almanca"}
-        gom{"Goa Konkanicesi"}
         gon{"Gondi dili"}
         gor{"Gorontalo dili"}
         got{"Gotça"}
@@ -341,6 +344,7 @@ tr{
         kv{"Komi"}
         kw{"Kernevekçe"}
         kwk{"Kwakʼwala dili"}
+        kxv{"Kuvi"}
         ky{"Kırgızca"}
         la{"Latince"}
         lad{"Ladino"}
@@ -637,6 +641,7 @@ tr{
         vi{"Vietnamca"}
         vls{"Batı Flamanca"}
         vmf{"Main Frankonya Dili"}
+        vmw{"Makuaca"}
         vo{"Volapük"}
         vot{"Votça"}
         vro{"Võro"}
@@ -652,6 +657,7 @@ tr{
         xal{"Kalmıkça"}
         xh{"Zosa dili"}
         xmf{"Megrelce"}
+        xnr{"Kangrice"}
         xog{"Soga"}
         yao{"Yao"}
         yap{"Yapça"}
@@ -674,6 +680,12 @@ tr{
         zun{"Zunice"}
         zxx{"Dilbilim içeriği yok"}
         zza{"Zazaca"}
+    }
+    Languages%core{
+        ku{"Kürtçe"}
+    }
+    Languages%extension{
+        ku{"Kurmanci"}
     }
     Languages%long{
         zh_Hans{"Basitleştirilmiş Çince (Mandarin)"}
@@ -716,7 +728,6 @@ tr{
         Cakm{"Chakma"}
         Cans{"UCAS"}
         Cari{"Karya"}
-        Cham{"Cham"}
         Cher{"Çeroki"}
         Cirt{"Cirth"}
         Copt{"Kıpti"}
@@ -753,7 +764,6 @@ tr{
         Hung{"Eski Macar"}
         Inds{"Indus"}
         Ital{"Eski İtalyan"}
-        Jamo{"Jamo"}
         Java{"Cava Dili"}
         Jpan{"Japon"}
         Jurc{"Jurchen"}
@@ -787,7 +797,6 @@ tr{
         Merc{"Meroitik El Yazısı"}
         Mero{"Meroitik"}
         Mlym{"Malayalam"}
-        Modi{"Modi"}
         Mong{"Moğol"}
         Moon{"Moon"}
         Mroo{"Mro"}
@@ -886,6 +895,7 @@ tr{
             indian{"Ulusal Hint Takvimi"}
             islamic{"Hicri Takvim"}
             islamic-civil{"Hicri Takvim (16 Temmuz 622)"}
+            islamic-rgsa{"Hicri Takvim (Suudi)"}
             islamic-tbla{"Hicri Takvim (15 Temmuz 622)"}
             islamic-umalqura{"Hicri Takvim (Ümmü-l Kurra Takvimi)"}
             iso8601{"ISO-8601 Takvimi"}
@@ -893,9 +903,30 @@ tr{
             persian{"İran Takvimi"}
             roc{"Çin Cumhuriyeti Takvimi"}
         }
+        calendar%core{
+            buddhist{"Budist"}
+            chinese{"Çin"}
+            coptic{"Kıpti"}
+            dangi{"Dangi"}
+            ethiopic{"Etiyopik"}
+            ethiopic-amete-alem{"Etiyopik Amete Alem"}
+            gregorian{"Miladi"}
+            hebrew{"İbrani"}
+            islamic{"Hicri"}
+            islamic-civil{"Hicri (16 Temmuz 622)"}
+            islamic-tbla{"Hicri (15 Temmuz 622)"}
+            islamic-umalqura{"Hicri (Ümmü-l Kurra Takvimi)"}
+            japanese{"Japon"}
+            persian{"İran"}
+            roc{"Çin Cumhuriyeti"}
+        }
         cf{
             account{"Muhasebe Para Biçimi"}
             standard{"Standart Para Biçimi"}
+        }
+        cf%core{
+            account{"Muhasebe"}
+            standard{"Standart"}
         }
         colAlternate{
             non-ignorable{"Sembolleri Sıralama"}
@@ -930,17 +961,14 @@ tr{
             tertiary{"Aksanları/Büyük-Küçük Harfleri/Genişliği Sıralama"}
         }
         collation{
-            big5han{"Geleneksel Çince Sıralama Düzeni - Big5"}
             compat{"Önceki Sıralama Düzeni (uyumluluk için)"}
             dictionary{"Sözlük Sıralama Düzeni"}
             ducet{"Saptanmış Unicode Sıralama Düzeni"}
             emoji{"Emoji Sıralama Düzeni"}
             eor{"Avrupa Sıralama Kuralları"}
-            gb2312han{"Basitleştirilmiş Çince Sıralama Düzeni - GB2312"}
             phonebook{"Telefon Defteri Sıralama Düzeni"}
             phonetic{"Fonetik Sıralama Düzeni"}
             pinyin{"Pinyin Sıralama Düzeni"}
-            reformed{"Yeni Sıralama Düzeni"}
             search{"Genel Amaçlı Arama"}
             searchjl{"Hangul İlk Sessiz Harfe Göre Arama"}
             standard{"Standart Sıralama Düzeni"}
@@ -949,10 +977,29 @@ tr{
             unihan{"Radikal-Vuruş Sıralama Düzeni"}
             zhuyin{"Zhuyin Sıralama Düzeni"}
         }
+        collation%core{
+            compat{"Uyumluluk"}
+            dictionary{"Sözlük"}
+            ducet{"Saptanmış Unicode"}
+            phonebook{"Telefon Defteri"}
+            phonetic{"Fonetik"}
+            pinyin{"Pinyin"}
+            search{"Arama"}
+            standard{"Standart"}
+            stroke{"Vuruş"}
+            traditional{"Geleneksel"}
+            unihan{"Radikal-Vuruş"}
+            zhuyin{"Zhuyin"}
+        }
         d0{
             fwidth{"Tam Genişlik"}
             hwidth{"Yarım genişlik"}
             npinyin{"Rakam"}
+        }
+        em%core{
+            default{"Varsayılan"}
+            emoji{"Emoji"}
+            text{"Metin"}
         }
         hc{
             h11{"12 Saat Sistemi (0–11)"}
@@ -960,10 +1007,27 @@ tr{
             h23{"24 Saat Sistemi (0–23)"}
             h24{"24 Saat Sistemi (1–24)"}
         }
+        hc%core{
+            h11{"12 (0–11)"}
+            h12{"12 (1–12)"}
+            h23{"24 (0–23)"}
+            h24{"24 (1–24)"}
+        }
         lb{
             loose{"Serbest Satır Sonu Stili"}
             normal{"Normal Satır Sonu Stili"}
             strict{"Katı Satır Sonu Stili"}
+        }
+        lb%core{
+            loose{"Serbest"}
+            normal{"Normal"}
+            strict{"Katı"}
+        }
+        lw%core{
+            breakall{"Tümünü kes"}
+            keepall{"Tümünü koru"}
+            normal{"Normal"}
+            phrase{"Sözcük öbeklerinde koru"}
         }
         m0{
             bgn{"US BGN Transliterasyon"}
@@ -973,6 +1037,11 @@ tr{
             metric{"Metrik Sistem"}
             uksystem{"İngiliz Ölçü Sistemi"}
             ussystem{"ABD Ölçü Sistemi"}
+        }
+        ms%core{
+            metric{"Metrik"}
+            uksystem{"İngiliz"}
+            ussystem{"ABD"}
         }
         numbers{
             ahom{"Ahom Rakamları"}
@@ -1052,6 +1121,10 @@ tr{
             traditional{"Geleneksel Rakamlar"}
             vaii{"Vai Rakamları"}
             wara{"Warang Citi Rakamları"}
+        }
+        ss%core{
+            none{"Kapalı"}
+            standard{"Açık"}
         }
     }
     Variants{

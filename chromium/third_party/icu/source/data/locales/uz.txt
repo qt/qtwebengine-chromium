@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 uz{
     AuxExemplarCharacters{"[áàăâåäãā æ cç éèĕêëē íìĭîïī ñ óòŏôöøō œ úùŭûüū w ÿ]"}
     ExemplarCharacters{"[a b d e f g h i j k l m n o p q r s t u v x y z {oʻ} {gʻ} {sh} {ch} ʼ]"}
@@ -8,7 +8,16 @@ uz{
     ExemplarCharactersNumbers{"[  \\- ‑ , % ‰ + 0 1 2 3 4 5 6 7 8 9]"}
     ExemplarCharactersPunctuation{"[\\- ‐‑ – — , ; \\: ! ? . … '‘’ \u0022“” ( ) \\[ \\] § @ * / \\& # † ‡ ′ ″]"}
     NumberElements{
+        arab{
+            symbols{
+                approximatelySign{"≈"}
+                exponential{"^"}
+            }
+        }
         arabext{
+            patterns{
+                accountingFormat%alphaNextToNumber{"¤ #,##0.00;(¤ #,##0.00)"}
+            }
             symbols{
                 minusSign{"-"}
                 nan{"son emas"}
@@ -18,8 +27,10 @@ uz{
         latn{
             patterns{
                 accountingFormat{"¤#,##0.00;(¤#,##0.00)"}
+                accountingFormat%alphaNextToNumber{"¤ #,##0.00;(¤ #,##0.00)"}
                 accountingFormat%noCurrency{"#,##0.00;(#,##0.00)"}
                 currencyFormat{"#,##0.00 ¤"}
+                currencyFormat%alphaNextToNumber{"#,##0.00 ¤"}
             }
             patternsLong{
                 decimalFormat{
@@ -254,9 +265,6 @@ uz{
                     h{"B h:mm–h:mm"}
                     m{"B h:mm – h:mm"}
                 }
-                Gy{
-                    G{"G y – G y"}
-                }
                 GyM{
                     G{"M/y (GGGGG) – M/y (GGGGG)"}
                     M{"M/y – M/y (GGGGG)"}
@@ -381,12 +389,16 @@ uz{
                 Bh{"B h"}
                 Bhm{"B h:mm"}
                 Bhms{"B h:mm:ss"}
+                EBh{"E, B h"}
                 EBhm{"E, B h:mm"}
                 EBhms{"E, B h:mm:ss"}
                 EHm{"E, HH:mm"}
                 EHms{"E, HH:mm:ss"}
+                Eh{"E, h a"}
                 Ehm{"E, h:mm a"}
                 Ehms{"E, h:mm:ss a"}
+                GyM{"MM-y G"}
+                GyMEd{"E, dd-MM-y G"}
                 GyMMM{"MMM, G y"}
                 GyMMMEd{"E, d-MMM, G y"}
                 GyMMMd{"d-MMM, G y"}
@@ -403,7 +415,6 @@ uz{
                 MMMMd{"d-MMMM"}
                 MMMd{"d-MMM"}
                 Md{"dd/MM"}
-                h{"h a"}
                 hm{"h:mm a"}
                 hms{"h:mm:ss a"}
                 hmsv{"h:mm:ss a (v)"}
@@ -478,20 +489,18 @@ uz{
             }
             eras{
                 abbreviated{
-                    "m.a.",
-                    "milodiy",
+                    0{"m.a."}
+                    1{"milodiy"}
                 }
                 abbreviated%variant{
-                    "e.a.",
-                    "mil.",
+                    0{"e.a."}
+                    1{"mil."}
                 }
                 wide{
-                    "miloddan avvalgi",
-                    "milodiy",
+                    0{"miloddan avvalgi"}
                 }
                 wide%variant{
-                    "eramizdan avvalgi",
-                    "mil.",
+                    0{"eramizdan avvalgi"}
                 }
             }
             intervalFormats{
@@ -503,9 +512,6 @@ uz{
                     B{"B h:mm – B h:mm"}
                     h{"B h:mm – h:mm"}
                     m{"B h:mm – h:mm"}
-                }
-                Gy{
-                    G{"G y – G y"}
                 }
                 GyM{
                     G{"M/y (G) – M/y (G)"}
@@ -569,10 +575,6 @@ uz{
                 Md{
                     M{"dd/MM – dd/MM"}
                     d{"dd/MM – dd/MM"}
-                }
-                h{
-                    a{"h a – h a"}
-                    h{"h–h a"}
                 }
                 hm{
                     a{"h:mm a – h:mm a"}
@@ -724,7 +726,7 @@ uz{
             }
             eras{
                 abbreviated{
-                    "hijriy",
+                    0{"hijriy"}
                 }
             }
             monthNames{
@@ -732,30 +734,30 @@ uz{
                     abbreviated{
                         "Muh.",
                         "Saf.",
-                        "Rob. avv.",
-                        "Rob. ox.",
+                        "Rab. avv.",
+                        "Rab. son.",
                         "Jum. avv.",
-                        "Jum. ox.",
+                        "Jum. son.",
                         "Raj.",
                         "Sha.",
                         "Ram.",
                         "Shav.",
-                        "Zul-q.",
-                        "Zul-h.",
+                        "Zulq.",
+                        "Zulh.",
                     }
                     wide{
                         "Muharram",
                         "Safar",
-                        "Robi’ ul-avval",
-                        "Robi’ ul-oxir",
-                        "Jumad ul-avval",
-                        "Jumad ul-oxir",
+                        "Rabiʼul avval",
+                        "Rabiʼus soniy",
+                        "Jumodul avval",
+                        "Jumodus soniy",
                         "Rajab",
                         "Sha’bon",
                         "Ramazon",
                         "Shavvol",
-                        "Zul-qa’da",
-                        "Zul-hijja",
+                        "Zulqaʼda",
+                        "Zulhijja",
                     }
                 }
             }
@@ -763,7 +765,7 @@ uz{
         persian{
             eras{
                 abbreviated{
-                    "forsiy",
+                    0{"forsiy"}
                 }
             }
             monthNames{
@@ -1302,6 +1304,9 @@ uz{
             surnameFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
             surnameFirst-short-referring-formal{"{surname} {given-initial} {given2-initial}"}
             surnameFirst-short-referring-informal{"{surname} {given-initial}"}
+        }
+        parameterDefault{
+            formality{"informal"}
         }
     }
 }

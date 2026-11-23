@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 de{
     zoneStrings{
         "Africa:Addis_Ababa"{
@@ -18,47 +18,23 @@ de{
         "Africa:Djibouti"{
             ec{"Dschibuti"}
         }
-        "Africa:El_Aaiun"{
-            ec{"El Aaiún"}
-        }
         "Africa:Khartoum"{
             ec{"Khartum"}
-        }
-        "Africa:Lome"{
-            ec{"Lomé"}
         }
         "Africa:Mogadishu"{
             ec{"Mogadischu"}
         }
-        "Africa:Ndjamena"{
-            ec{"N’Djamena"}
-        }
         "Africa:Porto-Novo"{
             ec{"Porto Novo"}
-        }
-        "Africa:Sao_Tome"{
-            ec{"São Tomé"}
         }
         "Africa:Tripoli"{
             ec{"Tripolis"}
         }
-        "America:Asuncion"{
-            ec{"Asunción"}
-        }
         "America:Bahia_Banderas"{
             ec{"Bahia Banderas"}
         }
-        "America:Bogota"{
-            ec{"Bogotá"}
-        }
         "America:Cayman"{
             ec{"Kaimaninseln"}
-        }
-        "America:Cordoba"{
-            ec{"Córdoba"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
         }
         "America:Havana"{
             ec{"Havanna"}
@@ -71,12 +47,6 @@ de{
         }
         "America:Mexico_City"{
             ec{"Mexiko-Stadt"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
-        }
-        "America:Sao_Paulo"{
-            ec{"São Paulo"}
         }
         "America:St_Barthelemy"{
             ec{"Saint-Barthélemy"}
@@ -104,9 +74,6 @@ de{
         }
         "Asia:Chita"{
             ec{"Tschita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Tschoibalsan"}
         }
         "Asia:Damascus"{
             ec{"Damaskus"}
@@ -189,9 +156,6 @@ de{
         "Asia:Tokyo"{
             ec{"Tokio"}
         }
-        "Asia:Urumqi"{
-            ec{"Ürümqi"}
-        }
         "Asia:Vladivostok"{
             ec{"Wladiwostok"}
         }
@@ -222,9 +186,6 @@ de{
         "Atlantic:South_Georgia"{
             ec{"Südgeorgien"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"Koordinierte Weltzeit"}
         }
@@ -245,9 +206,6 @@ de{
         }
         "Europe:Bucharest"{
             ec{"Bukarest"}
-        }
-        "Europe:Busingen"{
-            ec{"Büsingen"}
         }
         "Europe:Copenhagen"{
             ec{"Kopenhagen"}
@@ -282,14 +240,8 @@ de{
         "Europe:Saratov"{
             ec{"Saratow"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Ulyanovsk"{
             ec{"Uljanowsk"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Uschgorod"}
         }
         "Europe:Vatican"{
             ec{"Vatikan"}
@@ -303,9 +255,6 @@ de{
         "Europe:Warsaw"{
             ec{"Warschau"}
         }
-        "Europe:Zaporozhye"{
-            ec{"Saporischschja"}
-        }
         "Europe:Zurich"{
             ec{"Zürich"}
         }
@@ -318,14 +267,8 @@ de{
         "Indian:Maldives"{
             ec{"Malediven"}
         }
-        "Indian:Reunion"{
-            ec{"Réunion"}
-        }
         "Pacific:Easter"{
             ec{"Osterinsel"}
-        }
-        "Pacific:Enderbury"{
-            ec{"Enderbury"}
         }
         "Pacific:Fiji"{
             ec{"Fidschi"}
@@ -351,9 +294,7 @@ de{
             ls{"Südafrikanische Zeit"}
         }
         "meta:Africa_Western"{
-            ld{"Westafrikanische Sommerzeit"}
-            lg{"Westafrikanische Zeit"}
-            ls{"Westafrikanische Normalzeit"}
+            ls{"Westafrikanische Zeit"}
         }
         "meta:Alaska"{
             ld{"Alaska-Sommerzeit"}
@@ -381,9 +322,9 @@ de{
             ls{"Nordamerikanische Ostküsten-Normalzeit"}
         }
         "meta:America_Mountain"{
-            ld{"Rocky-Mountain-Sommerzeit"}
-            lg{"Rocky-Mountain-Zeit"}
-            ls{"Rocky-Mountain-Normalzeit"}
+            ld{"Rocky-Mountains-Sommerzeit"}
+            lg{"Rocky-Mountains-Zeit"}
+            ls{"Rocky-Mountains-Normalzeit"}
         }
         "meta:America_Pacific"{
             ld{"Nordamerikanische Westküsten-Sommerzeit"}
@@ -510,11 +451,6 @@ de{
             lg{"Chinesische Zeit"}
             ls{"Chinesische Normalzeit"}
         }
-        "meta:Choibalsan"{
-            ld{"Tschoibalsan-Sommerzeit"}
-            lg{"Tschoibalsan-Zeit"}
-            ls{"Tschoibalsan-Normalzeit"}
-        }
         "meta:Christmas"{
             ls{"Weihnachtsinsel-Zeit"}
         }
@@ -632,6 +568,9 @@ de{
         "meta:Guyana"{
             ls{"Guyana-Zeit"}
         }
+        "meta:Hawaii"{
+            ls{"Hawaii-Aleuten-Normalzeit"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Hawaii-Aleuten-Sommerzeit"}
             lg{"Hawaii-Aleuten-Zeit"}
@@ -690,6 +629,9 @@ de{
             lg{"Kamtschatka-Zeit"}
             ls{"Kamtschatka-Normalzeit"}
         }
+        "meta:Kazakhstan"{
+            ls{"Kasachische Zeit"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Ostkasachische Zeit"}
         }
@@ -710,7 +652,7 @@ de{
             ls{"Krasnojarsker Normalzeit"}
         }
         "meta:Kyrgystan"{
-            ls{"Kirgisistan-Zeit"}
+            ls{"Kirgisische Zeit"}
         }
         "meta:Lanka"{
             ls{"Sri-Lanka-Zeit"}
@@ -727,9 +669,6 @@ de{
             ld{"Macau-Sommerzeit"}
             lg{"Macau-Zeit"}
             ls{"Macau-Normalzeit"}
-        }
-        "meta:Macquarie"{
-            ls{"Macquarieinsel-Zeit"}
         }
         "meta:Magadan"{
             ld{"Magadan-Sommerzeit"}
@@ -755,11 +694,6 @@ de{
         }
         "meta:Mawson"{
             ls{"Mawson-Zeit"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Nordwestmexiko-Sommerzeit"}
-            lg{"Nordwestmexiko-Zeit"}
-            ls{"Nordwestmexiko-Normalzeit"}
         }
         "meta:Mexico_Pacific"{
             ld{"Mexikanische Pazifik-Sommerzeit"}
@@ -864,7 +798,7 @@ de{
             ls{"Pitcairninseln-Zeit"}
         }
         "meta:Ponape"{
-            ls{"Ponape-Zeit"}
+            ls{"Pohnpei-Zeit"}
         }
         "meta:Pyongyang"{
             ls{"Pjöngjang-Zeit"}
@@ -922,7 +856,7 @@ de{
             ls{"Taipeh-Normalzeit"}
         }
         "meta:Tajikistan"{
-            ls{"Tadschikistan-Zeit"}
+            ls{"Tadschikische Zeit"}
         }
         "meta:Tokelau"{
             ls{"Tokelau-Zeit"}
@@ -935,10 +869,15 @@ de{
         "meta:Truk"{
             ls{"Chuuk-Zeit"}
         }
+        "meta:Turkey"{
+            ld{"Türkische Sommerzeit"}
+            lg{"Türkische Zeit"}
+            ls{"Türkische Normalzeit"}
+        }
         "meta:Turkmenistan"{
-            ld{"Turkmenistan-Sommerzeit"}
+            ld{"Turkmenische Sommerzeit"}
             lg{"Turkmenistan-Zeit"}
-            ls{"Turkmenistan-Normalzeit"}
+            ls{"Turkmenische Normalzeit"}
         }
         "meta:Tuvalu"{
             ls{"Tuvalu-Zeit"}
@@ -949,9 +888,9 @@ de{
             ls{"Uruguayische Normalzeit"}
         }
         "meta:Uzbekistan"{
-            ld{"Usbekistan-Sommerzeit"}
-            lg{"Usbekistan-Zeit"}
-            ls{"Usbekistan-Normalzeit"}
+            ld{"Usbekische Sommerzeit"}
+            lg{"Usbekische Zeit"}
+            ls{"Usbekische Normalzeit"}
         }
         "meta:Vanuatu"{
             ld{"Vanuatu-Sommerzeit"}

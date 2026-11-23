@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 fy{
     zoneStrings{
         "Africa:Addis_Ababa"{
@@ -229,9 +229,6 @@ fy{
         "Europe:Tirane"{
             ec{"Tirana"}
         }
-        "Europe:Uzhgorod"{
-            ec{"Oezjhorod"}
-        }
         "Europe:Vatican"{
             ec{"Fatikaanstêd"}
         }
@@ -243,9 +240,6 @@ fy{
         }
         "Europe:Warsaw"{
             ec{"Warschau"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Zaporizja"}
         }
         "Europe:Zurich"{
             ec{"Zürich"}
@@ -304,9 +298,7 @@ fy{
             ls{"Sûd-Afrikaanske tiid"}
         }
         "meta:Africa_Western"{
-            ld{"West-Afrikaanske simmertiid"}
-            lg{"West-Afrikaanske tiid"}
-            ls{"West-Afrikaanske standerttiid"}
+            ls{"West-Afrikaanske tiid"}
         }
         "meta:Alaska"{
             ld{"Alaska-simmertiid"}
@@ -455,11 +447,6 @@ fy{
             lg{"Sineeske tiid"}
             ls{"Sineeske standerttiid"}
         }
-        "meta:Choibalsan"{
-            ld{"Tsjojbalsan simmertiid"}
-            lg{"Tsjojbalsan tiid"}
-            ls{"Tsjojbalsan standerttiid"}
-        }
         "meta:Christmas"{
             ls{"Krysteilânske tiid"}
         }
@@ -574,6 +561,9 @@ fy{
         "meta:Guyana"{
             ls{"Guyaanske tiid"}
         }
+        "meta:Hawaii"{
+            ls{"Hawaii-Aleoetyske standerttiid"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Hawaii-Aleoetyske simmertiid"}
             lg{"Hawaii-Aleoetyske tiid"}
@@ -669,9 +659,6 @@ fy{
             ld{"Macause simmertiid"}
             lg{"Macause tiid"}
             ls{"Macause standerttiid"}
-        }
-        "meta:Macquarie"{
-            ls{"Macquarie-eilânske tiid"}
         }
         "meta:Magadan"{
             ld{"Magadan-simmertiid"}

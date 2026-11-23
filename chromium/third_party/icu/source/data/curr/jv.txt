@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 jv{
     Currencies{
         AED{
@@ -333,7 +333,7 @@ jv{
         }
         LSL{
             "LSL",
-            "Lesotho Loti",
+            "Loti Lesotho",
         }
         LYD{
             "LYD",
@@ -441,7 +441,7 @@ jv{
         }
         PHP{
             "₱",
-            "Piso Filipina",
+            "Peso Filipina",
         }
         PKR{
             "PKR",
@@ -619,6 +619,10 @@ jv{
             "EC$",
             "Dolar Karibia Wetan",
         }
+        XCG{
+            "Cg.",
+            "Guilder Karibia",
+        }
         XOF{
             "F CFA",
             "CFA Franc Afrika Kulon",
@@ -643,13 +647,20 @@ jv{
             "ZMW",
             "Kwacha Sambia",
         }
+        ZWG{
+            "ZWG",
+            "Emas Zimbabwe",
+        }
     }
     CurrencyPlurals{
-        LSL{
-            other{"Lesotho lotis"}
-        }
         MAD{
             other{"Dirham Moroko"}
+        }
+        XCG{
+            other{"Guilder Karibia"}
+        }
+        ZWG{
+            other{"Emas Zimbabwe"}
         }
     }
     CurrencyUnitPatterns{

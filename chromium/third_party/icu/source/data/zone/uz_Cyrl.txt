@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 uz_Cyrl{
     %%Parent{"root"}
     zoneStrings{
@@ -29,9 +29,7 @@ uz_Cyrl{
             ls{"Жанубий Африка вақти"}
         }
         "meta:Africa_Western"{
-            ld{"Ғарбий Африка ёзги вақти"}
-            lg{"Ғарбий Африка вақти"}
-            ls{"Ғарбий Африка стандарт вақти"}
+            ls{"Ғарбий Африка вақти"}
         }
         "meta:Alaska"{
             ld{"Аляска кундузги вақти"}
@@ -160,11 +158,6 @@ uz_Cyrl{
             lg{"Хитой вақти"}
             ls{"Хитой стандарт вақти"}
         }
-        "meta:Choibalsan"{
-            ld{"Чойбалсан ёзги вақти"}
-            lg{"Чойбалсан вақти"}
-            ls{"Чойбалсан стандарт вақти"}
-        }
         "meta:Christmas"{
             ls{"Рождество ороли вақти"}
         }
@@ -267,6 +260,9 @@ uz_Cyrl{
         "meta:Guyana"{
             ls{"Гайана вақти"}
         }
+        "meta:Hawaii"{
+            ls{"Гавайи-алеут стандарт вақти"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Гавайи-алеут кундузги вақти"}
             lg{"Гавайи-алеут вақти"}
@@ -349,9 +345,6 @@ uz_Cyrl{
             ld{"Лорд Хове кундузги вақти"}
             lg{"Лорд Хове вақти"}
             ls{"Лорд Хове стандарт вақти"}
-        }
-        "meta:Macquarie"{
-            ls{"Маквари ороли вақти"}
         }
         "meta:Magadan"{
             ld{"Магадан ёзги вақти"}

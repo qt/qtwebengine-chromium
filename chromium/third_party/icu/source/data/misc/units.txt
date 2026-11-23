@@ -1,14 +1,9 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 units:table(nofallback){
-    cldrVersion{"44.1"}
+    cldrVersion{"48"}
     convertUnits{
-        100-kilometer{
-            factor{"100000"}
-            systems{"si metric"}
-            target{"meter"}
-        }
         acre{
             factor{"ft2_to_m2 * 43560"}
             systems{"ussystem uksystem"}
@@ -48,6 +43,11 @@ units:table(nofallback){
             factor{"42*gal_to_m3"}
             systems{"ussystem"}
             target{"cubic-meter"}
+        }
+        beaufort{
+            special{"beaufort"}
+            systems{"metric_adjacent"}
+            target{"meter-per-second"}
         }
         becquerel{
             factor{"1"}
@@ -138,6 +138,11 @@ units:table(nofallback){
         cup{
             factor{"gal_to_m3/16"}
             systems{"ussystem"}
+            target{"cubic-meter"}
+        }
+        cup-imperial{
+            factor{"gal_imp_to_m3/16"}
+            systems{"uksystem"}
             target{"cubic-meter"}
         }
         cup-jp{
@@ -259,6 +264,11 @@ units:table(nofallback){
             systems{"uksystem"}
             target{"cubic-meter"}
         }
+        fluid-ounce-metric{
+            factor{"0.03*0.001"}
+            systems{"metric_adjacent"}
+            target{"cubic-meter"}
+        }
         foodcalorie{
             factor{"4184"}
             systems{"ussystem uksystem"}
@@ -301,7 +311,7 @@ units:table(nofallback){
         }
         gasoline-energy-density{
             factor{"33.705 * 3600 * 1000/gal_to_m3"}
-            systems{"metric_adjacent ussystem uksystem"}
+            systems{"ussystem uksystem"}
             target{"kilogram-per-meter-square-second"}
         }
         grain{
@@ -375,7 +385,7 @@ units:table(nofallback){
         karat{
             factor{"1/24"}
             systems{"metric_adjacent ussystem uksystem"}
-            target{"portion"}
+            target{"part"}
         }
         katal{
             factor{"item_per_mole"}
@@ -416,6 +426,11 @@ units:table(nofallback){
             factor{"1*5*0.000001"}
             systems{"jpsystem"}
             target{"cubic-meter"}
+        }
+        light-speed{
+            factor{"speed_of_light_meters_per_second"}
+            systems{"ussystem uksystem si_acceptable"}
+            target{"meter-per-second"}
         }
         light-year{
             factor{"speed_of_light_meters_per_second*sec_per_julian_year"}
@@ -490,6 +505,11 @@ units:table(nofallback){
             systems{"si metric prefixable"}
             target{"kilogram-meter-per-square-second"}
         }
+        night{
+            factor{"1"}
+            systems{"metric_adjacent uksystem ussystem"}
+            target{"night"}
+        }
         ofglucose{
             factor{"1000*item_per_mole/glucose_molar_mass"}
             systems{"metric_adjacent"}
@@ -525,6 +545,11 @@ units:table(nofallback){
             systems{"astronomical prefixable"}
             target{"meter"}
         }
+        part{
+            factor{"1"}
+            systems{"metric_adjacent ussystem uksystem"}
+            target{"part"}
+        }
         pascal{
             factor{"1"}
             systems{"si metric prefixable"}
@@ -533,22 +558,17 @@ units:table(nofallback){
         percent{
             factor{"1/100"}
             systems{"metric_adjacent ussystem uksystem"}
-            target{"portion"}
+            target{"part"}
         }
         permille{
             factor{"1/1000"}
             systems{"metric_adjacent ussystem uksystem"}
-            target{"portion"}
-        }
-        permillion{
-            factor{"1/1000000"}
-            systems{"metric_adjacent ussystem uksystem"}
-            target{"portion"}
+            target{"part"}
         }
         permyriad{
             factor{"1/10000"}
             systems{"metric_adjacent ussystem uksystem"}
-            target{"portion"}
+            target{"part"}
         }
         pinch{
             factor{"gal_to_m3/128*128"}
@@ -579,11 +599,6 @@ units:table(nofallback){
             factor{"ft_to_m/864"}
             systems{"metric_adjacent ussystem uksystem"}
             target{"meter"}
-        }
-        portion{
-            factor{"1"}
-            systems{"metric_adjacent ussystem uksystem"}
-            target{"portion"}
         }
         pound{
             factor{"lb_to_kg"}
@@ -821,6 +836,58 @@ units:table(nofallback){
         sho_to_m3{"2401/1331*1000"}
         speed_of_light_meters_per_second{"299792458"}
         tsubo_to_m2{"400/121"}
+    }
+    unitIdComponents{
+        and{"and"}
+        per{"per"}
+        power{
+            "square",
+            "cubic",
+            "pow2",
+            "pow3",
+            "pow4",
+            "pow5",
+            "pow6",
+            "pow7",
+            "pow8",
+            "pow9",
+            "pow10",
+            "pow11",
+            "pow12",
+            "pow13",
+            "pow14",
+            "pow15",
+        }
+        prefix{
+            "arc",
+            "british",
+            "dessert",
+            "fluid",
+            "light",
+            "nautical",
+            "xxx",
+            "x",
+            "curr",
+        }
+        suffix{
+            "force",
+            "imperial",
+            "luminosity",
+            "mass",
+            "metric",
+            "person",
+            "radius",
+            "scandinavian",
+            "troy",
+            "unit",
+            "it",
+            "us",
+            "energy",
+            "density",
+            "cloth",
+            "length",
+            "jp",
+        }
     }
     unitPreferenceData{
         "area"{
@@ -2024,6 +2091,16 @@ units:table(nofallback){
                         unit{"kilometer-per-hour"}
                     }
                 }
+                CN{
+                    {
+                        unit{"meter-per-second"}
+                    }
+                }
+                DK{
+                    {
+                        unit{"meter-per-second"}
+                    }
+                }
                 FI{
                     {
                         unit{"meter-per-second"}
@@ -2032,6 +2109,11 @@ units:table(nofallback){
                 GB{
                     {
                         unit{"mile-per-hour"}
+                    }
+                }
+                JP{
+                    {
+                        unit{"meter-per-second"}
                     }
                 }
                 KR{
@@ -2232,6 +2314,132 @@ units:table(nofallback){
             }
         }
     }
+    unitPrefixes{
+        atto{
+            power10{"-18"}
+            symbol{"a"}
+        }
+        centi{
+            power10{"-2"}
+            symbol{"c"}
+        }
+        deci{
+            power10{"-1"}
+            symbol{"d"}
+        }
+        deka{
+            power10{"1"}
+            symbol{"da"}
+        }
+        exa{
+            power10{"18"}
+            symbol{"E"}
+        }
+        exbi{
+            power2{"60"}
+            symbol{"Ei"}
+        }
+        femto{
+            power10{"-15"}
+            symbol{"f"}
+        }
+        gibi{
+            power2{"30"}
+            symbol{"Gi"}
+        }
+        giga{
+            power10{"9"}
+            symbol{"G"}
+        }
+        hecto{
+            power10{"2"}
+            symbol{"h"}
+        }
+        kibi{
+            power2{"10"}
+            symbol{"Ki"}
+        }
+        kilo{
+            power10{"3"}
+            symbol{"k"}
+        }
+        mebi{
+            power2{"20"}
+            symbol{"Mi"}
+        }
+        mega{
+            power10{"6"}
+            symbol{"M"}
+        }
+        milli{
+            power10{"-3"}
+            symbol{"m"}
+        }
+        nano{
+            power10{"-9"}
+            symbol{"n"}
+        }
+        pebi{
+            power2{"50"}
+            symbol{"Pi"}
+        }
+        peta{
+            power10{"15"}
+            symbol{"P"}
+        }
+        pico{
+            power10{"-12"}
+            symbol{"p"}
+        }
+        quecto{
+            power10{"-30"}
+            symbol{"q"}
+        }
+        quetta{
+            power10{"30"}
+            symbol{"Q"}
+        }
+        ronna{
+            power10{"27"}
+            symbol{"R"}
+        }
+        ronto{
+            power10{"-27"}
+            symbol{"r"}
+        }
+        tebi{
+            power2{"40"}
+            symbol{"Ti"}
+        }
+        tera{
+            power10{"12"}
+            symbol{"T"}
+        }
+        yobi{
+            power2{"80"}
+            symbol{"Yi"}
+        }
+        yocto{
+            power10{"-24"}
+            symbol{"y"}
+        }
+        yotta{
+            power10{"24"}
+            symbol{"Y"}
+        }
+        zebi{
+            power2{"70"}
+            symbol{"Zi"}
+        }
+        zepto{
+            power10{"-21"}
+            symbol{"z"}
+        }
+        zetta{
+            power10{"21"}
+            symbol{"Z"}
+        }
+    }
     unitQuantities{
         {
             candela{"luminous-intensity"}
@@ -2321,6 +2529,9 @@ units:table(nofallback){
             year{"year-duration"}
         }
         {
+            night{"night-duration"}
+        }
+        {
             ampere{"electric-current"}
         }
         {
@@ -2360,7 +2571,7 @@ units:table(nofallback){
             per-second{"radioactivity"}
         }
         {
-            portion{"portion"}
+            part{"portion"}
         }
         {
             bit{"digital"}

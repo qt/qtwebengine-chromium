@@ -1,10 +1,16 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 hi_Latn{
     %%Parent{"en_IN"}
     AuxExemplarCharacters{"[ā ḍ ĕē ḥ ī ḷ{l̥} ṁ{m̐} ñṅṇ ŏō ṛ{r̥}{r̥̄} śṣ ṭ ū]"}
     NumberElements{
+        deva{
+            patterns{
+                currencyFormat%alphaNextToNumber{"¤ #,##,##0.00"}
+                currencyFormat%noCurrency{"#,##,##0.00"}
+            }
+        }
         latn{
             patterns{
                 accountingFormat{"¤#,##,##0.00"}
@@ -38,7 +44,7 @@ hi_Latn{
                 "h:mm:ss a z",
                 "h:mm:ss a",
                 "h:mm a",
-                "EEEE d MMMM, y G",
+                "EEEE, d MMMM y G",
                 "d MMMM, y G",
                 "d MMM, y G",
                 "d/M/y GGGGG",
@@ -54,8 +60,18 @@ hi_Latn{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimePatterns%relative{
+                "{1} {0} 'par'",
+                "{1} {0} 'par'",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
             availableFormats{
                 Bhms{"h:mm.ss B"}
+                EBh{"E, B h"}
+                Eh{"E, h a"}
+                Hv{"HH'h', v"}
+                hv{"h a, v"}
                 yyyyMd{"d/M/y GGGGG"}
             }
             intervalFormats{
@@ -101,7 +117,7 @@ hi_Latn{
                 "h:mm:ss a z",
                 "h:mm:ss a",
                 "h:mm a",
-                "EEEE d MMMM, y",
+                "EEEE, d MMMM y",
                 "d MMMM, y",
                 "dd MMM, y",
                 "dd/MM/y",
@@ -112,8 +128,14 @@ hi_Latn{
                 "{1} {0}",
             }
             DateTimePatterns%atTime{
-                "{1}, {0} 'baje'",
-                "{1}, {0} 'baje'",
+                "{1}, {0} 'par'",
+                "{1}, {0} 'par'",
+                "{1}, {0}",
+                "{1}, {0}",
+            }
+            DateTimePatterns%relative{
+                "{1}, {0} 'par'",
+                "{1}, {0} 'par'",
                 "{1}, {0}",
                 "{1}, {0}",
             }
@@ -128,14 +150,14 @@ hi_Latn{
                 "yMMdd",
             }
             availableFormats{
-                Gy{"G y"}
-                GyMMM{"G y MMM"}
-                GyMMMEd{"G y, dd MMM, E"}
-                GyMMMd{"G y, d MMM"}
+                EBh{"E, B h"}
+                Eh{"E, h a"}
+                GyMMMEEEEd{"EEEE, d MMM, y G"}
                 MMMMW{
                     one{"MMMM 'kaa' 'week' W"}
                     other{"MMMM 'kaa' 'week' W"}
                 }
+                hv{"h a, v"}
                 yMMMd{"d MMM, y"}
                 yw{
                     one{"Y 'kaa' 'week' w"}
@@ -333,7 +355,7 @@ hi_Latn{
         islamic{
             eras{
                 abbreviated{
-                    "Hijri",
+                    0{"Hijri"}
                 }
             }
             monthNames{

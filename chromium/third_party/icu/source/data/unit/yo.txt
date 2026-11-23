@@ -1,8 +1,14 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 yo{
     units{
+        angle{
+            steradian{
+                dnam{"steradians"}
+                other{"{0} steradians"}
+            }
+        }
         compound{
             1024p1{"kibi{0}"}
             1024p2{"mẹ́bì {0}"}
@@ -12,6 +18,30 @@ yo{
             1024p6{"ẹ́síbì {0}"}
             1024p7{"sẹ́bì {0}"}
             1024p8{"yóòbù {0}"}
+            10p-1{"desi{0}"}
+            10p-12{"piko{0}"}
+            10p-15{"femuto{0}"}
+            10p-18{"ato{0}"}
+            10p-2{"senti{0}"}
+            10p-21{"seputo{0}"}
+            10p-24{"yokito{0}"}
+            10p-27{"ronto{0}"}
+            10p-3{"mili{0}"}
+            10p-30{"kuekito{0}"}
+            10p-6{"maikiro{0}"}
+            10p-9{"nano{0}"}
+            10p1{"deka{0}"}
+            10p12{"tera{0}"}
+            10p15{"peta{0}"}
+            10p18{"ekisa{0}"}
+            10p2{"hekito{0}"}
+            10p21{"seta{0}"}
+            10p24{"yota{0}"}
+            10p27{"ronna{0}"}
+            10p3{"kilo{0}"}
+            10p30{"kueta{0}"}
+            10p6{"mega{0}"}
+            10p9{"giga{0}"}
             power2{
                 other{
                     _{
@@ -32,8 +62,28 @@ yo{
                 dnam{"àwọ́n ohun"}
                 other{"{0} àwon ohun"}
             }
+            katal{
+                dnam{"katals"}
+                other{"{0} katals"}
+            }
+            ofglucose{
+                dnam{"nínú èròjà gúlúkóòsì"}
+                other{"{0} nínú èròjà gúlúkóósì"}
+            }
+            part{
+                dnam{"ìpín"}
+                other{"ìpín {0}"}
+            }
+            part-per-1e9{
+                dnam{"ẹ̀yà nínú ìdá blíọ̀nù"}
+            }
             permille{
                 other{"{0} ìdákan nínú ẹgbẹ̀rún"}
+            }
+        }
+        consumption{
+            mile-per-gallon-imperial{
+                dnam{"maili ninu ami galọọnu kan"}
             }
         }
         digital{
@@ -110,10 +160,43 @@ yo{
             }
             year{
                 dnam{"ọ̀dún"}
-                per{"{0} ọd"}
+                other{"{0} ọ̀dún"}
+                per{"{0} lọ́dún"}
+            }
+        }
+        electric{
+            coulomb{
+                dnam{"coulombs"}
+                other{"{0} coulombs"}
+            }
+            farad{
+                dnam{"farads"}
+            }
+            henry{
+                dnam{"henrys"}
+            }
+            siemens{
+                dnam{"siemens"}
+            }
+        }
+        energy{
+            calorie-it{
+                dnam{"kálórì [IT]"}
+                other{"kálórì {0} [IT]"}
+            }
+            gray{
+                dnam{"grays"}
+                other{"{0} grays"}
+            }
+            sievert{
+                dnam{"sieverts"}
             }
         }
         force{
+            kilogram-force{
+                dnam{"kilograms-force"}
+                other{"{0} kilograms-force"}
+            }
             kilowatt-hour-per-100-kilometer{
                 dnam{"àwọ́n wákàtí kílówáàtì ní kìlómítà ọgọ́rùn"}
                 other{"{0} àwọ́n wákàtí kílówáàtì ní kìlómítà ọgọ́rùn"}
@@ -135,12 +218,20 @@ yo{
         }
         light{
             candela{
-                dnam{"kandẹ́là"}
                 other{"{0} kandẹ́là"}
             }
             lumen{
                 dnam{"lumẹ́ẹ̀nì"}
                 other{"{0} lumẹ́ẹ̀nì"}
+            }
+        }
+        magnetic{
+            tesla{
+                dnam{"teslas"}
+            }
+            weber{
+                dnam{"webers"}
+                other{"{0} webers"}
             }
         }
         mass{
@@ -149,6 +240,18 @@ yo{
             }
             stone{
                 other{"{0} àwon okùta"}
+            }
+            tonne{
+                dnam{"mẹtiriki tọọnu"}
+            }
+        }
+        pressure{
+            millimeter-ofhg{
+                dnam{"milimita ti makuiri"}
+            }
+            ofhg{
+                dnam{"ti makuiri"}
+                other{"{0} ti makuiri"}
             }
         }
         speed{
@@ -162,9 +265,12 @@ yo{
                 dnam{"búsẹ́ẹ̀li"}
                 other{"{0} búsẹ́ẹ̀li"}
             }
+            cup{
+                dnam{"àwọn ife"}
+            }
             dessert-spoon{
-                dnam{"àmì ṣíbí oúnjẹ́ kékeré"}
-                other{"{0} àmì ṣíbí oúnjẹ́ kékeré"}
+                dnam{"àwọn ṣíbí oúnjẹ́ kékeré"}
+                other{"àwọn {0} àmì ṣíbí oúnjẹ́ kékeré"}
             }
             dessert-spoon-imperial{
                 dnam{"ṣíbí oúnjẹ kékeré"}
@@ -242,11 +348,18 @@ yo{
             mole{
                 other{"{0}mol"}
             }
+            ofglucose{
+                dnam{"Glc"}
+            }
+            part{
+                dnam{"ìpín"}
+                other{"ìpín {0}"}
+            }
+            part-per-1e6{
+                other{"{0}ppm"}
+            }
             permille{
                 other{"{0}‰"}
-            }
-            permillion{
-                other{"{0}ppm"}
             }
         }
         consumption{
@@ -314,6 +427,9 @@ yo{
             minute{
                 other{"{0}/ìṣ"}
             }
+            night{
+                other{"àwọn alẹ́{0}"}
+            }
             quarter{
                 other{"{0} i"}
             }
@@ -343,6 +459,9 @@ yo{
             }
             calorie{
                 other{"{0}cal"}
+            }
+            calorie-it{
+                dnam{"cal-IT"}
             }
             electronvolt{
                 other{"{0}eV"}
@@ -523,6 +642,9 @@ yo{
             knot{
                 other{"{0}kn"}
             }
+            light-speed{
+                other{"{0}ìmọ́lẹ̀"}
+            }
             meter-per-second{
                 other{"{0}m/s"}
             }
@@ -660,6 +782,14 @@ yo{
         }
     }
     unitsShort{
+        area{
+            acre{
+                dnam{"sare"}
+            }
+            hectare{
+                dnam{"hekita"}
+            }
+        }
         compound{
             1024p1{"àmì Kí {0}"}
             1024p2{"àmì Mi {0}"}
@@ -675,12 +805,19 @@ yo{
                 dnam{"ohun"}
                 other{"{0} ohun"}
             }
+            ofglucose{
+                dnam{"Glc"}
+            }
+            part{
+                dnam{"ìpín"}
+                other{"ìpín {0}"}
+            }
+            part-per-1e6{
+                dnam{"ara/milíọ̀nù"}
+            }
             permille{
                 dnam{"ìdákan nínú ẹgbẹ̀rún"}
                 other{"{0} pasenti"}
-            }
-            permillion{
-                dnam{"ara/milíọ̀nù"}
             }
         }
         digital{
@@ -749,6 +886,11 @@ yo{
                 other{"{0} oṣù"}
                 per{"{0}/oṣù"}
             }
+            night{
+                dnam{"àwọn alẹ́"}
+                other{"àwọn alẹ́ {0}"}
+                per{"{0}/alẹ́"}
+            }
             quarter{
                 dnam{"idame"}
                 other{"{0} idame"}
@@ -767,7 +909,11 @@ yo{
             year{
                 dnam{"ọd"}
                 other{"{0} ọd"}
-                per{"{0}/ọd"}
+            }
+        }
+        energy{
+            calorie-it{
+                dnam{"cal-IT"}
             }
         }
         force{
@@ -794,10 +940,13 @@ yo{
                 dnam{"fọ́lọ́ọ̀ngì"}
                 other{"{0} fọ́"}
             }
+            meter{
+                dnam{"mita"}
+            }
         }
         light{
             candela{
-                dnam{"sídiì"}
+                dnam{"kandẹ́là"}
                 other{"{0} sídiì"}
             }
             lumen{
@@ -814,9 +963,23 @@ yo{
                 dnam{"àwon okùta"}
             }
         }
+        pressure{
+            ofhg{
+                other{"{0} ti Hg"}
+            }
+        }
+        speed{
+            light-speed{
+                dnam{"ìmọ́lẹ̀"}
+                other{"{0} ìmọ́lẹ̀"}
+            }
+        }
         volume{
             bushel{
                 dnam{"Búsẹ́ẹ̀li"}
+            }
+            cup{
+                dnam{"ife"}
             }
             dessert-spoon{
                 dnam{"ṣíbí oúnjẹ́ kékeré"}
@@ -837,6 +1000,9 @@ yo{
             jigger{
                 dnam{"jígà"}
                 other{"{0} jígà"}
+            }
+            liter{
+                dnam{"lita"}
             }
             pinch{
                 dnam{"píńṣì"}

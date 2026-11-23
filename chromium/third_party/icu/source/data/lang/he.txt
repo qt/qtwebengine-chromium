@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 he{
     Keys{
         calendar{"לוח שנה"}
@@ -14,10 +14,13 @@ he{
         colStrength{"עוצמת המיון"}
         collation{"סדר מיון"}
         currency{"מטבע"}
+        em{"הצגת אמוג׳י"}
         hc{"מחזור השעות (12 או 24)"}
         lb{"סגנון מעבר שורה"}
+        lw{"פיצול שורה בתוך מילים"}
         ms{"מערכת מדידה"}
         numbers{"מספרים"}
+        ss{"פיצול משפט אחרי מילה מקוצרת"}
         timezone{"אזור זמן"}
         va{"משתנה אזור"}
         x{"שימוש פרטי"}
@@ -79,6 +82,7 @@ he{
         bin{"ביני"}
         bkm{"קום"}
         bla{"סיקסיקה"}
+        blo{"אני"}
         bm{"במבארה"}
         bn{"בנגלית"}
         bo{"טיבטית"}
@@ -135,7 +139,6 @@ he{
         dar{"דרגווה"}
         dav{"טאיטה"}
         de{"גרמנית"}
-        de_CH{"גרמנית (שוויץ)"}
         del{"דלאוור"}
         den{"סלאבית"}
         dgr{"דוגריב"}
@@ -175,7 +178,6 @@ he{
         fo{"פארואזית"}
         fon{"פון"}
         fr{"צרפתית"}
-        fr_CH{"צרפתית (שוויץ)"}
         frc{"צרפתית קייג׳ונית"}
         frm{"צרפתית תיכונה"}
         fro{"צרפתית עתיקה"}
@@ -294,6 +296,7 @@ he{
         kv{"קומי"}
         kw{"קורנית"}
         kwk{"קוואקוואלה"}
+        kxv{"קווי"}
         ky{"קירגיזית"}
         la{"לטינית"}
         lad{"לדינו"}
@@ -307,6 +310,7 @@ he{
         lij{"ליגורית"}
         lil{"לילואט"}
         lkt{"לקוטה"}
+        lmo{"לומברדית"}
         ln{"לינגלה"}
         lo{"לאו"}
         lol{"מונגו"}
@@ -499,6 +503,7 @@ he{
         swb{"קומורית"}
         syc{"סירית קלאסית"}
         syr{"סורית"}
+        szl{"שלזית"}
         ta{"טמילית"}
         tce{"טצ׳ון דרומית"}
         te{"טלוגו"}
@@ -547,7 +552,9 @@ he{
         uz{"אוזבקית"}
         vai{"וואי"}
         ve{"וונדה"}
+        vec{"ונציאנית"}
         vi{"וייטנאמית"}
+        vmw{"מאקואה"}
         vo{"‏וולאפיק"}
         vot{"ווטיק"}
         vun{"וונג׳ו"}
@@ -561,6 +568,7 @@ he{
         wuu{"סינית וו"}
         xal{"קלמיקית"}
         xh{"קוסה"}
+        xnr{"קאנגרי"}
         xog{"סוגה"}
         yao{"יאו"}
         yap{"יאפזית"}
@@ -582,6 +590,12 @@ he{
         zun{"זוני"}
         zxx{"ללא תוכן לשוני"}
         zza{"זאזא"}
+    }
+    Languages%core{
+        ku{"כורדית"}
+    }
+    Languages%extension{
+        ku{"כורדית"}
     }
     Languages%long{
         zh_Hans{"סינית מנדרינית פשוטה"}
@@ -798,6 +812,7 @@ he{
             indian{"לוח השנה ההודי הלאומי"}
             islamic{"לוח שנה ההיג׳רי"}
             islamic-civil{"לוח השנה המוסלמי האזרחי"}
+            islamic-rgsa{"לוח השנה המוסלמי (ערב הסעודית)"}
             islamic-tbla{"לוח השנה המוסלמי האסטרונומי"}
             islamic-umalqura{"לוח השנה המוסלמי אום אל-קורא"}
             iso8601{"לוח שנה ISO-8601"}
@@ -805,9 +820,30 @@ he{
             persian{"לוח השנה הפרסי"}
             roc{"לוח השנה הטייוואני"}
         }
+        calendar%core{
+            buddhist{"בודהיסטי"}
+            chinese{"סיני"}
+            coptic{"קופטי"}
+            dangi{"קוריאני"}
+            ethiopic{"אתיופי"}
+            ethiopic-amete-alem{"אמטה אלם האתיופי"}
+            gregorian{"גרגוריאני"}
+            hebrew{"עברי"}
+            islamic{"היג׳רי"}
+            islamic-civil{"היג׳רי אזרחי"}
+            islamic-tbla{"מוסלמי אסטרונומי"}
+            islamic-umalqura{"מוסלמי אום אל-קורא"}
+            japanese{"יפני"}
+            persian{"פרסי"}
+            roc{"טייוואני"}
+        }
         cf{
             account{"תבנית מטבע למטרות חשבונאות"}
             standard{"תבנית מטבע רגילה"}
+        }
+        cf%core{
+            account{"חשבונאות"}
+            standard{"רגילה"}
         }
         colAlternate{
             non-ignorable{"מיין סמלים"}
@@ -842,17 +878,14 @@ he{
             tertiary{"מיין הטעמות/רישיות/רוחב"}
         }
         collation{
-            big5han{"מיון סינית מסורתית"}
             compat{"סדר מיון קודם, עבור תאימות"}
             dictionary{"סדר מיון במילון"}
             ducet{"סדר מיון Unicode המוגדר כברירת מחדל"}
             emoji{"סדר מיון אימוג׳י"}
             eor{"חוקי סדר אירופיים"}
-            gb2312han{"סדר מיון סיני פשוט - GB2312"}
             phonebook{"מיון ספר טלפונים"}
             phonetic{"סדר מיון פונטי"}
             pinyin{"מיון פיניין"}
-            reformed{"סדר מיון מתוקן"}
             search{"חיפוש למטרה כללית"}
             searchjl{"חפש לפי העיצור הראשון באותיות הנגול"}
             standard{"סדר מיון רגיל"}
@@ -861,10 +894,29 @@ he{
             unihan{"סדר מיון לפי ספירת תווים Radical-Stroke"}
             zhuyin{"סדר מיון של ג׳ואין"}
         }
+        collation%core{
+            compat{"תאימות"}
+            dictionary{"מילון"}
+            ducet{"Unicode כברירת מחדל"}
+            phonebook{"ספר טלפונים"}
+            phonetic{"פונטי"}
+            pinyin{"פיניין"}
+            search{"חיפוש"}
+            standard{"רגיל"}
+            stroke{"ספירת תווים"}
+            traditional{"מסורתי"}
+            unihan{"Radical-Stroke"}
+            zhuyin{"ג׳ואין"}
+        }
         d0{
             fwidth{"רוחב מלא"}
             hwidth{"חצי רוחב"}
             npinyin{"מספרי"}
+        }
+        em%core{
+            default{"ברירת מחדל"}
+            emoji{"אמוג׳י"}
+            text{"טקסט"}
         }
         hc{
             h11{"מערכת של 12 שעות (‎0–11)"}
@@ -872,10 +924,27 @@ he{
             h23{"מערכת של 24 שעות (0‎–23)"}
             h24{"מערכת של 24 שעות (1‎–24)"}
         }
+        hc%core{
+            h11{"12 (0–11)"}
+            h12{"12 (1–12)"}
+            h23{"24 (0–23)"}
+            h24{"‎24 (1–24)"}
+        }
         lb{
             loose{"סגנון מעבר שורה גמיש"}
             normal{"סגנון מעבר שורה רגיל"}
             strict{"סגנון מעבר שורה קשיח"}
+        }
+        lb%core{
+            loose{"גמיש"}
+            normal{"רגיל"}
+            strict{"קשיח"}
+        }
+        lw%core{
+            breakall{"לחלק הכול"}
+            keepall{"לשמור הכול"}
+            normal{"רגיל"}
+            phrase{"לשמור כביטויים"}
         }
         m0{
             bgn{"תעתיק BGN ארה״ב"}
@@ -885,6 +954,11 @@ he{
             metric{"מערכת מטרית"}
             uksystem{"מערכת מדידה אימפריאלית"}
             ussystem{"מערכת מדידה אמריקאית"}
+        }
+        ms%core{
+            metric{"מטרית"}
+            uksystem{"בריטית"}
+            ussystem{"אמריקאית"}
         }
         numbers{
             ahom{"ספרות אהום"}
@@ -970,6 +1044,10 @@ he{
             vaii{"ספרות ואי"}
             wara{"ספרות ווראנג סיטי"}
             wcho{"ספרות וונצ׳ו"}
+        }
+        ss%core{
+            none{"כבוי"}
+            standard{"פועל"}
         }
     }
     Variants{

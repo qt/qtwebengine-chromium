@@ -1,12 +1,14 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 es_AR{
     %%Parent{"es_419"}
     NumberElements{
         latn{
             patterns{
                 accountingFormat{"¤ #,##0.00;(¤ #,##0.00)"}
+                accountingFormat%alphaNextToNumber{"¤ #,##0.00;(¤ #,##0.00)"}
+                accountingFormat%noCurrency{"#,##0.00;(#,##0.00)"}
                 currencyFormat{"¤ #,##0.00"}
             }
             symbols{
@@ -105,9 +107,6 @@ es_AR{
                 hm{
                     h{"h:mm–h:mm a"}
                     m{"h:mm–h:mm a"}
-                }
-                hmv{
-                    a{"h:mm a – h:mm a v"}
                 }
                 hv{
                     a{"h a – h a v"}

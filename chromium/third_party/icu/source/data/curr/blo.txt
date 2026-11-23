@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 blo{
     Currencies{
         AED{
@@ -611,6 +611,10 @@ blo{
             "EC$",
             "Karayiib gajakalaŋ kaɖala",
         }
+        XCG{
+            "Cg.",
+            "Karayiib kafɔlɔrɛŋ",
+        }
         XOF{
             "F CFA",
             "Garɩɖontǝna gɩteŋshilelaŋ kasɛɛfa",
@@ -634,6 +638,10 @@ blo{
         ZMW{
             "ZMW",
             "Sambii kakʊwaasha",
+        }
+        ZWG{
+            "ZWG",
+            "Simbabʊwee kawura",
         }
     }
     CurrencyPlurals{
@@ -1397,6 +1405,11 @@ blo{
             other{"Karayiib gajakalaŋ kɩɖala"}
             zero{"baa Karayiib gajakalaŋ kaɖala"}
         }
+        XCG{
+            one{"Karayiib kafɔlɔrɛŋ"}
+            other{"Karayiib kɩfɔlɔrɛŋ"}
+            zero{"baa Karayiib kafɔlɔrɛŋ"}
+        }
         XOF{
             one{"Garɩɖontǝna gɩteŋshilelaŋ kasɛɛfa"}
             other{"Garɩɖontǝna gɩteŋshilelaŋ kɩsɛɛfa"}
@@ -1427,10 +1440,15 @@ blo{
             other{"Sambii kɩkʊwaasha"}
             zero{"baa Sambii kakʊwaasha"}
         }
+        ZWG{
+            one{"Simbabʊwee kawura"}
+            other{"Simbabʊwee kɩwura"}
+            zero{"baa Simbabʊwee kawura"}
+        }
     }
     CurrencyUnitPatterns{
-        one{"{0} {1}"}
+        one{"{1} {0}"}
         other{"{1} {0}"}
-        zero{"{0} {1}"}
+        zero{"{1} {0}"}
     }
 }

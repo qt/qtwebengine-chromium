@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 fi{
     zoneStrings{
         "Africa:Addis_Ababa"{
@@ -12,44 +12,8 @@ fi{
         "Africa:Cairo"{
             ec{"Kairo"}
         }
-        "Africa:El_Aaiun"{
-            ec{"El Aaiún"}
-        }
         "Africa:Khartoum"{
             ec{"Khartum"}
-        }
-        "Africa:Lome"{
-            ec{"Lomé"}
-        }
-        "Africa:Ndjamena"{
-            ec{"N’Djamena"}
-        }
-        "Africa:Sao_Tome"{
-            ec{"São Tomé"}
-        }
-        "America:Araguaina"{
-            ec{"Araguaína"}
-        }
-        "America:Argentina:Tucuman"{
-            ec{"Tucumán"}
-        }
-        "America:Asuncion"{
-            ec{"Asunción"}
-        }
-        "America:Bogota"{
-            ec{"Bogotá"}
-        }
-        "America:Cordoba"{
-            ec{"Córdoba"}
-        }
-        "America:Cuiaba"{
-            ec{"Cuiabá"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
-        }
-        "America:Eirunepe"{
-            ec{"Eirunepé"}
         }
         "America:Godthab"{
             ec%secondary{"Godthåb"}
@@ -60,15 +24,6 @@ fi{
         "America:Jamaica"{
             ec{"Jamaika"}
         }
-        "America:Maceio"{
-            ec{"Maceió"}
-        }
-        "America:Mazatlan"{
-            ec{"Mazatlán"}
-        }
-        "America:Mexico_City"{
-            ec{"Ciudad de México"}
-        }
         "America:North_Dakota:Beulah"{
             ec{"Beulah, Pohjois-Dakota"}
         }
@@ -78,17 +33,8 @@ fi{
         "America:North_Dakota:New_Salem"{
             ec{"New Salem, Pohjois-Dakota"}
         }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
-        }
-        "America:Santarem"{
-            ec{"Santarém"}
-        }
         "America:Santiago"{
             ec{"Santiago de Chile"}
-        }
-        "America:Sao_Paulo"{
-            ec{"São Paulo"}
         }
         "America:Scoresbysund"{
             ec%secondary{"Scoresbysund"}
@@ -137,9 +83,6 @@ fi{
         }
         "Asia:Chita"{
             ec{"Tšita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Tšoibalsa"}
         }
         "Asia:Damascus"{
             ec{"Damaskos"}
@@ -201,9 +144,6 @@ fi{
         "Asia:Ulaanbaatar"{
             ec{"Ulan Bator"}
         }
-        "Asia:Urumqi"{
-            ec{"Ürümqi"}
-        }
         "Asia:Yakutsk"{
             ec{"Jakutsk"}
         }
@@ -234,9 +174,6 @@ fi{
         "Atlantic:St_Helena"{
             ec{"Saint Helena"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"UTC-yleisaika"}
         }
@@ -260,9 +197,6 @@ fi{
         }
         "Europe:Bucharest"{
             ec{"Bukarest"}
-        }
-        "Europe:Busingen"{
-            ec{"Büsingen"}
         }
         "Europe:Chisinau"{
             ec{"Chişinău"}
@@ -314,14 +248,8 @@ fi{
         "Europe:Tallinn"{
             ec{"Tallinna"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Ulyanovsk"{
             ec{"Uljanovsk"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Užgorod"}
         }
         "Europe:Vatican"{
             ec{"Vatikaani"}
@@ -334,9 +262,6 @@ fi{
         }
         "Europe:Warsaw"{
             ec{"Varsova"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Zaporižžja"}
         }
         "Europe:Zurich"{
             ec{"Zürich"}
@@ -353,14 +278,8 @@ fi{
         "Indian:Kerguelen"{
             ec{"Kerguelensaaret"}
         }
-        "Indian:Mahe"{
-            ec{"Mahé"}
-        }
         "Indian:Maldives"{
             ec{"Malediivit"}
-        }
-        "Indian:Reunion"{
-            ec{"Réunion"}
         }
         "Pacific:Chatham"{
             ec{"Chathamsaaret"}
@@ -369,7 +288,7 @@ fi{
             ec{"Pääsiäissaari"}
         }
         "Pacific:Enderbury"{
-            ec{"Enderbury"}
+            ec{"Abariringa"}
         }
         "Pacific:Fiji"{
             ec{"Fidži"}
@@ -385,9 +304,6 @@ fi{
         }
         "Pacific:Midway"{
             ec{"Midwaysaaret"}
-        }
-        "Pacific:Noumea"{
-            ec{"Nouméa"}
         }
         "meta:Acre"{
             ld{"Acren kesäaika"}
@@ -407,9 +323,7 @@ fi{
             ls{"Etelä-Afrikan aika"}
         }
         "meta:Africa_Western"{
-            ld{"Länsi-Afrikan kesäaika"}
-            lg{"Länsi-Afrikan aika"}
-            ls{"Länsi-Afrikan normaaliaika"}
+            ls{"Länsi-Afrikan aika"}
         }
         "meta:Alaska"{
             ld{"Alaskan kesäaika"}
@@ -566,11 +480,6 @@ fi{
             lg{"Kiinan aika"}
             ls{"Kiinan normaaliaika"}
         }
-        "meta:Choibalsan"{
-            ld{"Tšoibalsan kesäaika"}
-            lg{"Tšoibalsan aika"}
-            ls{"Tšoibalsan normaaliaika"}
-        }
         "meta:Christmas"{
             ls{"Joulusaaren aika"}
         }
@@ -679,6 +588,9 @@ fi{
         "meta:Guyana"{
             ls{"Guyanan aika"}
         }
+        "meta:Hawaii"{
+            ls{"Havaijin-Aleuttien normaaliaika"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Havaijin-Aleuttien kesäaika"}
             lg{"Havaijin-Aleuttien aika"}
@@ -737,6 +649,9 @@ fi{
             lg{"Kamtšatkan aika"}
             ls{"Kamtšatkan normaaliaika"}
         }
+        "meta:Kazakhstan"{
+            ls{"Kazakstanin aika"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Itä-Kazakstanin aika"}
         }
@@ -775,9 +690,6 @@ fi{
             lg{"Macaon aika"}
             ls{"Macaon normaaliaika"}
         }
-        "meta:Macquarie"{
-            ls{"Macquariensaaren aika"}
-        }
         "meta:Magadan"{
             ld{"Magadanin kesäaika"}
             lg{"Magadanin aika"}
@@ -802,11 +714,6 @@ fi{
         }
         "meta:Mawson"{
             ls{"Mawsonin aika"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Luoteis-Meksikon kesäaika"}
-            lg{"Luoteis-Meksikon aika"}
-            ls{"Luoteis-Meksikon normaaliaika"}
         }
         "meta:Mexico_Pacific"{
             ld{"Meksikon Tyynenmeren kesäaika"}
@@ -981,6 +888,11 @@ fi{
         }
         "meta:Truk"{
             ls{"Chuukin aika"}
+        }
+        "meta:Turkey"{
+            ld{"Turkin kesäaika"}
+            lg{"Turkin aika"}
+            ls{"Turkin normaaliaika"}
         }
         "meta:Turkmenistan"{
             ld{"Turkmenistanin kesäaika"}

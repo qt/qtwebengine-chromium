@@ -24,6 +24,17 @@ using namespace icu;
 using namespace icu::number;
 using namespace icu::number::impl;
 
+namespace {
+
+// Maximum number of integer or fraction digits we will output during formatting.
+// Set to 999,999 to allow valid large-range performance tests (e.g., test21684_Performance
+// formatting -1e99999) while preventing runaway loops, allocation spikes, and timeouts
+// when formatting numbers with hugely out-of-bounds magnitudes (like scale/1e200000000).
+// This value may be tuned to a smaller value later if necessary.
+constexpr int32_t kMaxFormattedDigits = 999999;
+
+}  // namespace
+
 
 NumberFormatterImpl::NumberFormatterImpl(const MacroProps& macros, UErrorCode& status)
     : NumberFormatterImpl(macros, true, status) {
@@ -229,7 +240,7 @@ NumberFormatterImpl::macrosToMicroGenerator(const MacroProps& macros, bool safe,
             return nullptr;
         }
     }
-    auto patternInfo = new ParsedPatternInfo();
+    auto* patternInfo = new ParsedPatternInfo();
     if (patternInfo == nullptr) {
         status = U_MEMORY_ALLOCATION_ERROR;
         return nullptr;
@@ -252,12 +263,12 @@ NumberFormatterImpl::macrosToMicroGenerator(const MacroProps& macros, bool safe,
             status = U_ILLEGAL_ARGUMENT_ERROR;
             return nullptr;
         }
-        auto usagePrefsHandler =
+        auto* usagePrefsHandler =
             new UsagePrefsHandler(macros.locale, macros.unit, macros.usage.fValue, chain, status);
         fUsagePrefsHandler.adoptInsteadAndCheckErrorCode(usagePrefsHandler, status);
         chain = fUsagePrefsHandler.getAlias();
     } else if (isMixedUnit) {
-        auto unitConversionHandler = new UnitConversionHandler(macros.unit, chain, status);
+        auto* unitConversionHandler = new UnitConversionHandler(macros.unit, chain, status);
         fUnitConversionHandler.adoptInsteadAndCheckErrorCode(unitConversionHandler, status);
         chain = fUnitConversionHandler.getAlias();
     }
@@ -333,7 +344,8 @@ NumberFormatterImpl::macrosToMicroGenerator(const MacroProps& macros, bool safe,
 
     // Inner modifier (scientific notation)
     if (macros.notation.fType == Notation::NTN_SCIENTIFIC) {
-        auto newScientificHandler = new ScientificHandler(&macros.notation, fMicros.simple.symbols, chain);
+        auto* newScientificHandler =
+            new ScientificHandler(&macros.notation, fMicros.simple.symbols, chain);
         if (newScientificHandler == nullptr) {
             status = U_MEMORY_ALLOCATION_ERROR;
             return nullptr;
@@ -346,7 +358,7 @@ NumberFormatterImpl::macrosToMicroGenerator(const MacroProps& macros, bool safe,
     }
 
     // Middle modifier (patterns, positive/negative, currency symbols, percent)
-    auto patternModifier = new MutablePatternModifier(false);
+    auto* patternModifier = new MutablePatternModifier(false);
     if (patternModifier == nullptr) {
         status = U_MEMORY_ALLOCATION_ERROR;
         return nullptr;
@@ -444,7 +456,7 @@ NumberFormatterImpl::macrosToMicroGenerator(const MacroProps& macros, bool safe,
     if (isCompactNotation) {
         CompactType compactType = (isCurrency && unitWidth != UNUM_UNIT_WIDTH_FULL_NAME)
                                   ? CompactType::TYPE_CURRENCY : CompactType::TYPE_DECIMAL;
-        auto newCompactHandler = new CompactHandler(
+        auto* newCompactHandler = new CompactHandler(
             macros.notation.fUnion.compactStyle,
             macros.locale,
             nsName,
@@ -536,6 +548,11 @@ int32_t NumberFormatterImpl::writeNumber(
                 status);
 
     } else {
+        if (quantity.getUpperDisplayMagnitude() + 1 > kMaxFormattedDigits ||
+            -quantity.getLowerDisplayMagnitude() > kMaxFormattedDigits) {
+            status = U_ILLEGAL_ARGUMENT_ERROR;
+            return 0;
+        }
         // Add the integer digits
         length += writeIntegerDigits(
             micros,
@@ -593,8 +610,13 @@ int32_t NumberFormatterImpl::writeIntegerDigits(
         FormattedStringBuilder& string,
         int32_t index,
         UErrorCode& status) {
+    if (U_FAILURE(status)) { return 0; }
     int length = 0;
     int integerCount = quantity.getUpperDisplayMagnitude() + 1;
+    if (integerCount > kMaxFormattedDigits) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return 0;
+    }
     for (int i = 0; i < integerCount; i++) {
         // Add grouping separator
         if (micros.grouping.groupAtPosition(i, quantity)) {
@@ -628,8 +650,13 @@ int32_t NumberFormatterImpl::writeFractionDigits(
         FormattedStringBuilder& string,
         int32_t index,
         UErrorCode& status) {
+    if (U_FAILURE(status)) { return 0; }
     int length = 0;
     int fractionCount = -quantity.getLowerDisplayMagnitude();
+    if (fractionCount > kMaxFormattedDigits) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return 0;
+    }
     for (int i = 0; i < fractionCount; i++) {
         // Get and append the next digit value
         int8_t nextDigit = quantity.getDigit(-i - 1);

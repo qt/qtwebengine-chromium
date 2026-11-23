@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 gd{
     AuxExemplarCharacters{
         "[áăâåäãā æ ċç ḋ éĕêëē ḟ ġ íĭîïī ı j k ł ṁ ñ óŏôöøō œ ṗ q ṡşș ṫ úŭûüū v w x y"
@@ -32,7 +32,6 @@ gd{
                 accountingFormat%alphaNextToNumber{"¤ #,##0.00;(¤ #,##0.00)"}
                 accountingFormat%noCurrency{"#,##0.00;(#,##0.00)"}
                 currencyFormat{"¤#,##0.00"}
-                currencyFormat%alphaNextToNumber{"¤ #,##0.00"}
             }
             patternsLong{
                 decimalFormat{
@@ -624,6 +623,12 @@ gd{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimePatterns%relative{
+                "{0} {1}",
+                "{0} {1}",
+                "{0} {1}",
+                "{0} {1}",
+            }
             DateTimeSkeletons{
                 "HHmmsszzzz",
                 "HHmmssz",
@@ -638,16 +643,21 @@ gd{
                 Bh{"hB"}
                 Bhm{"h:mmB"}
                 Bhms{"h:mm:ssB"}
+                EBh{"E hB"}
                 EBhm{"E h:mmB"}
                 EBhms{"E h:mm:ssB"}
                 Ed{"E, d"}
+                Eh{"E ha"}
                 Ehm{"E h:mma"}
                 Ehms{"E h:mm:ssa"}
                 Gy{"y G"}
+                GyM{"M/y G"}
+                GyMEd{"E, d/M/y G"}
                 GyMMM{"LLL y G"}
                 GyMMMEd{"E, d'mh' MMM y G"}
                 GyMMMd{"d'mh' MMM y G"}
                 GyMd{"d/M/y GGGGG"}
+                Hv{"HH'u' v"}
                 MEd{"E, d/M"}
                 MMMEd{"E, d MMM"}
                 MMMMd{"d'mh' MMMM"}
@@ -657,6 +667,7 @@ gd{
                 h{"ha"}
                 hm{"h:mma"}
                 hms{"h:mm:ssa"}
+                hv{"ha v"}
                 y{"y G"}
                 yMEd{"E, d/M/y"}
                 yMM{"LL/y"}
@@ -675,11 +686,9 @@ gd{
             }
             intervalFormats{
                 Bh{
-                    B{"h B – h B"}
                     h{"h – h B"}
                 }
                 Bhm{
-                    B{"h:mm B – h:mm B"}
                     h{"h:mm – h:mm B"}
                     m{"h:mm – h:mm B"}
                 }
@@ -827,7 +836,7 @@ gd{
                 "HH:mm",
                 "EEEE, d'mh' MMMM y",
                 "d'mh' MMMM y",
-                "d MMM y",
+                "d'mh' MMM y",
                 "dd/MM/y",
                 "{1} {0}",
                 "{1} {0}",
@@ -841,20 +850,33 @@ gd{
                 "{1}, {0}",
                 "{1}, {0}",
             }
+            DateTimePatterns%relative{
+                "{0} {1}",
+                "{0} {1}",
+                "{0} {1}",
+                "{0} {1}",
+            }
             availableFormats{
                 Bh{"hB"}
                 Bhm{"h:mmB"}
                 Bhms{"h:mm:ssB"}
-                EBhm{"E h:mmB"}
-                EBhms{"E h:mm:ssB"}
+                EBh{"E, hB"}
+                EBhm{"E, h:mmB"}
+                EBhms{"E, h:mm:ssB"}
+                EHm{"E, HH:mm"}
+                EHms{"E, HH:mm:ss"}
                 Ed{"E, d"}
-                Ehm{"E h:mma"}
-                Ehms{"E h:mm:ss a"}
+                Eh{"E, ha"}
+                Ehm{"E, h:mma"}
+                Ehms{"E, h:mm:ss a"}
                 Gy{"y G"}
+                GyM{"M/y G"}
+                GyMEd{"E, d/M/y G"}
                 GyMMM{"LLL y G"}
-                GyMMMEd{"E, d'mh' MMM y G"}
-                GyMMMd{"d'mh' MMM y G"}
+                GyMMMEd{"E, d MMM y G"}
+                GyMMMd{"d MMM y G"}
                 GyMd{"d/M/y G"}
+                Hv{"HH'u' v"}
                 MEd{"E, d/M"}
                 MMMEd{"E, d MMM"}
                 MMMMW{
@@ -872,13 +894,14 @@ gd{
                 hms{"h:mm:ss a"}
                 hmsv{"h:mm:ss a v"}
                 hmv{"h:mma v"}
+                hv{"ha v"}
                 yM{"L/y"}
                 yMEd{"E, d/M/y"}
                 yMM{"LL/y"}
                 yMMM{"LLL Y"}
-                yMMMEd{"E, d'mh' MMM y"}
+                yMMMEd{"E, d MMM y"}
                 yMMMM{"LLLL y"}
-                yMMMd{"d'mh' MMM y"}
+                yMMMd{"d MMM y"}
                 yMd{"d/M/y"}
                 yQQQ{"QQQ y"}
                 yQQQQ{"QQQQ y"}
@@ -933,29 +956,27 @@ gd{
             }
             eras{
                 abbreviated{
-                    "RC",
-                    "AD",
+                    0{"RC"}
+                    1{"AD"}
                 }
                 narrow{
-                    "R",
-                    "A",
+                    0{"R"}
+                    1{"A"}
                 }
                 wide{
-                    "Ro Chrìosta",
-                    "An dèidh Chrìosta",
+                    0{"Ro Chrìosta"}
+                    1{"An dèidh Chrìosta"}
                 }
                 wide%variant{
-                    "ron linn choitcheann",
-                    "dhen linn choitcheann",
+                    0{"ron linn choitcheann"}
+                    1{"dhen linn choitcheann"}
                 }
             }
             intervalFormats{
                 Bh{
-                    B{"h B – h B"}
                     h{"h – h B"}
                 }
                 Bhm{
-                    B{"h:mm B – h:mm B"}
                     h{"h:mm – h:mm B"}
                     m{"h:mm – h:mm B"}
                 }
@@ -964,15 +985,15 @@ gd{
                     y{"y – y G"}
                 }
                 GyM{
-                    G{"L/y GGGGG – L/y GGGGG"}
-                    M{"L/y – L/y GGGGG"}
-                    y{"L/y – L/y GGGGG"}
+                    G{"L/y G – L/y G"}
+                    M{"L/y – L/y G"}
+                    y{"L/y – L/y G"}
                 }
                 GyMEd{
-                    G{"E, d/M/y GGGGG – E, d/M/y GGGGG"}
-                    M{"E, d/M/y – E, d/M/y GGGGG"}
-                    d{"E, d/M/y – E, d/M/y GGGGG"}
-                    y{"E, d/M/y – E, d/M/y GGGGG"}
+                    G{"E, d/M/y G– E, d/M/y G"}
+                    M{"E, d/M/y – E, d/M/y G"}
+                    d{"E, d/M/y – E, d/M/y G"}
+                    y{"E, d/M/y – E, d/M/y G"}
                 }
                 GyMMM{
                     G{"LLL y G – LLL y G"}
@@ -992,10 +1013,10 @@ gd{
                     y{"d MMM y – d MMM y G"}
                 }
                 GyMd{
-                    G{"d/M/y GGGGG – d/M/y GGGGG"}
-                    M{"d/M/y – d/M/y GGGGG"}
-                    d{"d/M/y – d/M/y GGGGG"}
-                    y{"d/M/y – d/M/y GGGGG"}
+                    G{"d/M/y G – d/M/y G"}
+                    M{"d/M/y – d/M/y G"}
+                    d{"d/M/y – d/M/y G"}
+                    y{"d/M/y – d/M/y G"}
                 }
                 H{
                     H{"HH – HH"}
@@ -1023,7 +1044,7 @@ gd{
                 }
                 MMMEd{
                     M{"E, d MMM – E, d MMM"}
-                    d{"E, d – E, d MMM"}
+                    d{"E, d MMM – E, d MMM"}
                 }
                 MMMd{
                     M{"d MMM – d MMM"}
@@ -1072,7 +1093,7 @@ gd{
                 }
                 yMMMEd{
                     M{"E, d MMM – E, d MMM y"}
-                    d{"E, d – E, d MMM y"}
+                    d{"E, d MMM – E, d MMM y"}
                     y{"E, d MMM y – E, d MMM y"}
                 }
                 yMMMM{
@@ -1172,12 +1193,11 @@ gd{
         roc{
             eras{
                 abbreviated{
-                    "Ro PnS",
-                    "Mínguó",
+                    0{"Ro PnS"}
+                    1{"Mínguó"}
                 }
                 wide{
-                    "Ro Ph. na Sìne",
-                    "Mínguó",
+                    0{"Ro Ph. na Sìne"}
                 }
             }
         }
@@ -2303,10 +2323,10 @@ gd{
                 "[%％﹪ ٪]",
                 "[‰ ؉]",
                 "[\$＄﹩]",
-                "[£ ₤]",
+                "[£￡ ₤]",
                 "[¥￥]",
                 "[₩￦]",
-                "[₹ ₨ {Rp} {Rs}]",
+                "[₹ {Rp} {Rs}₨]",
             }
         }
         number{
@@ -2348,32 +2368,32 @@ gd{
             givenFirst-short-monogram-formal{"{surname-monogram-allCaps}"}
             givenFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
             givenFirst-short-referring-formal{"{given-initial} {given2-initial} {surname}"}
-            givenFirst-short-referring-informal{"{given-informal} {given2-initial}"}
+            givenFirst-short-referring-informal{"{given-informal}"}
             sorting-long-referring-formal{"{surname-core}, {given} {given2} {surname-prefix}"}
-            sorting-long-referring-informal{"{surname}, {given-informal} {given2}"}
+            sorting-long-referring-informal{"{surname-core}, {given-informal} {given2}"}
             sorting-medium-referring-formal{"{surname-core}, {given} {given2-initial} {surname-prefix}"}
-            sorting-medium-referring-informal{"{surname}, {given-informal} {given2-informal-initial}"}
+            sorting-medium-referring-informal{"{surname-core}, {given-informal} {given2-informal-initial}"}
             sorting-short-referring-formal{"{surname-core}, {given-initial} {given2-initial} {surname-prefix}"}
-            sorting-short-referring-informal{"{surname}, {given-informal} {given2-informal-initial}"}
+            sorting-short-referring-informal{"{surname-core}, {given-informal} {given2-informal-initial}"}
             surnameFirst-long-addressing-formal{"{title-vocative} {surname-vocative}"}
             surnameFirst-long-addressing-informal{"{given-informal-vocative} {given2-vocative}"}
             surnameFirst-long-monogram-informal{"{surname-monogram-allCaps}{given-informal-monogram-allCaps}"}
             surnameFirst-long-referring-formal{
-                "{surname} {surname2} {title} {given} {given2} {generation}, {credent"
-                "ials}"
+                "{surname} {surname2}, {title} {given} {given2} {generation}, {creden"
+                "tials}"
             }
-            surnameFirst-long-referring-informal{"{surname} {surname2} {given-informal} {given2}"}
+            surnameFirst-long-referring-informal{"{surname} {surname2}, {given-informal} {given2}"}
             surnameFirst-medium-addressing-formal{"{title-vocative} {surname-vocative}"}
             surnameFirst-medium-addressing-informal{"{given-informal-vocative} {given2-vocative}"}
             surnameFirst-medium-monogram-formal{"{surname-monogram-allCaps}"}
             surnameFirst-medium-monogram-informal{"{given-informal-monogram-allCaps}"}
-            surnameFirst-medium-referring-formal{"{surname} {given} {given2-initial} {generation}, {credentials}"}
-            surnameFirst-medium-referring-informal{"{surname} {given-informal} {given2}"}
+            surnameFirst-medium-referring-formal{"{surname}, {given} {given2-initial} {generation}, {credentials}"}
+            surnameFirst-medium-referring-informal{"{surname}, {given-informal} {given2}"}
             surnameFirst-short-addressing-formal{"{title-vocative} {surname-vocative}"}
             surnameFirst-short-addressing-informal{"{given-informal-vocative}"}
             surnameFirst-short-monogram-formal{"{surname-monogram-allCaps}"}
             surnameFirst-short-monogram-informal{"{given-informal-monogram-allCaps}"}
-            surnameFirst-short-referring-formal{"{surname} {given-initial} {given2-initial}"}
+            surnameFirst-short-referring-formal{"{surname}, {given-initial} {given2-initial}"}
             surnameFirst-short-referring-informal{"{given-informal} {given2-initial}"}
         }
         parameterDefault{

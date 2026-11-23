@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 hu{
     units{
         acceleration{
@@ -162,6 +162,11 @@ hu{
                 dnam{"fordulat"}
                 one{"{0} fordulat"}
                 other{"{0} fordulat"}
+            }
+            steradian{
+                dnam{"szteradián"}
+                one{"{0} szteradián"}
+                other{"{0} szteradián"}
             }
         }
         area{
@@ -392,7 +397,30 @@ hu{
                 one{"{0} karát"}
                 other{"{0} karát"}
             }
+            katal{
+                dnam{"katal"}
+                one{"{0} katal"}
+                other{"{0} katal"}
+            }
             milligram-ofglucose-per-deciliter{
+                case{
+                    accusative{
+                        one{"{0} milligramm/decilitert"}
+                        other{"{0} milligramm/decilitert"}
+                    }
+                    instrumental{
+                        one{"{0} milligramm/deciliterrel"}
+                        other{"{0} milligramm/deciliterrel"}
+                    }
+                    terminative{
+                        one{"{0} milligramm/deciliterig"}
+                        other{"{0} milligramm/deciliterig"}
+                    }
+                    translative{
+                        one{"{0} milligramm/deciliterré"}
+                        other{"{0} milligramm/deciliterré"}
+                    }
+                }
                 dnam{"milligramm/deciliter"}
                 one{"{0} milligramm/deciliter"}
                 other{"{0} milligramm/deciliter"}
@@ -442,6 +470,38 @@ hu{
                 one{"{0} mól"}
                 other{"{0} mól"}
             }
+            ofglucose{
+                dnam{"glükóz"}
+                one{"{0} glükóz"}
+                other{"{0} glükóz"}
+            }
+            part{
+                dnam{"rész"}
+                one{"{0} rész"}
+                other{"{0} rész"}
+            }
+            part-per-1e6{
+                case{
+                    accusative{
+                        one{"{0} részecske/milliót"}
+                        other{"{0} részecske/milliót"}
+                    }
+                    instrumental{
+                        one{"{0} részecske/millióval"}
+                        other{"{0} részecske/millióval"}
+                    }
+                    terminative{
+                        one{"{0} részecske/millióig"}
+                        other{"{0} részecske/millióig"}
+                    }
+                    translative{
+                        one{"{0} részecske/millióvá"}
+                        other{"{0} részecske/millióvá"}
+                    }
+                }
+                one{"{0} részecske/millió"}
+                other{"{0} részecske/millió"}
+            }
             percent{
                 case{
                     accusative{
@@ -485,28 +545,6 @@ hu{
                 }
                 one{"{0} ezrelék"}
                 other{"{0} ezrelék"}
-            }
-            permillion{
-                case{
-                    accusative{
-                        one{"{0} részecske/milliót"}
-                        other{"{0} részecske/milliót"}
-                    }
-                    instrumental{
-                        one{"{0} részecske/millióval"}
-                        other{"{0} részecske/millióval"}
-                    }
-                    terminative{
-                        one{"{0} részecske/millióig"}
-                        other{"{0} részecske/millióig"}
-                    }
-                    translative{
-                        one{"{0} részecske/millióvá"}
-                        other{"{0} részecske/millióvá"}
-                    }
-                }
-                one{"{0} részecske/millió"}
-                other{"{0} részecske/millió"}
             }
             permyriad{
                 case{
@@ -1077,6 +1115,28 @@ hu{
                 one{"{0} nanoszekundum"}
                 other{"{0} nanoszekundum"}
             }
+            night{
+                case{
+                    accusative{
+                        one{"{0} éjszakát"}
+                        other{"{0} éjszakát"}
+                    }
+                    instrumental{
+                        one{"{0} éjszakával"}
+                        other{"{0} éjszakával"}
+                    }
+                    terminative{
+                        one{"{0} éjszakáig"}
+                        other{"{0} éjszakáig"}
+                    }
+                    translative{
+                        one{"{0} éjszakává"}
+                        other{"{0} éjszakává"}
+                    }
+                }
+                one{"{0} éjszaka"}
+                other{"{0} éjszaka"}
+            }
             quarter{
                 case{
                     accusative{
@@ -1193,6 +1253,21 @@ hu{
                 one{"{0} amper"}
                 other{"{0} amper"}
             }
+            coulomb{
+                dnam{"coulomb"}
+                one{"{0} coulomb"}
+                other{"{0} coulomb"}
+            }
+            farad{
+                dnam{"farad"}
+                one{"{0} farad"}
+                other{"{0} farad"}
+            }
+            henry{
+                dnam{"henry"}
+                one{"{0} henry"}
+                other{"{0} henry"}
+            }
             milliampere{
                 case{
                     accusative{
@@ -1239,6 +1314,11 @@ hu{
                 one{"{0} ohm"}
                 other{"{0} ohm"}
             }
+            siemens{
+                dnam{"siemens"}
+                one{"{0} siemens"}
+                other{"{0} siemens"}
+            }
             volt{
                 case{
                     accusative{
@@ -1264,6 +1344,11 @@ hu{
             }
         }
         energy{
+            becquerel{
+                dnam{"becquerel"}
+                one{"{0} becquerel"}
+                other{"{0} becquerel"}
+            }
             british-thermal-unit{
                 dnam{"brit hőegység"}
                 one{"{0} brit hőegység"}
@@ -1292,6 +1377,11 @@ hu{
                 one{"{0} kalória"}
                 other{"{0} kalória"}
             }
+            calorie-it{
+                dnam{"kalória [IT]"}
+                one{"{0} kalória [IT]"}
+                other{"{0} kalória [IT]"}
+            }
             electronvolt{
                 dnam{"elektronvolt"}
                 one{"{0} elektronvolt"}
@@ -1301,6 +1391,11 @@ hu{
                 dnam{"kalória"}
                 one{"{0} kalória"}
                 other{"{0} kalória"}
+            }
+            gray{
+                dnam{"gray"}
+                one{"{0} gray"}
+                other{"{0} gray"}
             }
             joule{
                 case{
@@ -1326,6 +1421,24 @@ hu{
                 other{"{0} joule"}
             }
             kilocalorie{
+                case{
+                    accusative{
+                        one{"{0} kilokalóriát"}
+                        other{"{0} kilokalóriát"}
+                    }
+                    instrumental{
+                        one{"{0} kilokalóriával"}
+                        other{"{0} kilokalóriával"}
+                    }
+                    terminative{
+                        one{"{0} kilokalóriáig"}
+                        other{"{0} kilokalóriáig"}
+                    }
+                    translative{
+                        one{"{0} kilokalóriává"}
+                        other{"{0} kilokalóriává"}
+                    }
+                }
                 dnam{"kilokalória"}
                 one{"{0} kilokalória"}
                 other{"{0} kilokalória"}
@@ -1376,6 +1489,11 @@ hu{
                 one{"{0} kilowattóra"}
                 other{"{0} kilowattóra"}
             }
+            sievert{
+                dnam{"sievert"}
+                one{"{0} sievert"}
+                other{"{0} sievert"}
+            }
             therm-us{
                 dnam{"amerikai therm"}
                 one{"{0} amerikai therm"}
@@ -1383,6 +1501,11 @@ hu{
             }
         }
         force{
+            kilogram-force{
+                dnam{"kilogramm-erő"}
+                one{"{0} kilogramm-erő"}
+                other{"{0} kilogramm-erő"}
+            }
             kilowatt-hour-per-100-kilometer{
                 case{
                     accusative{
@@ -1880,6 +2003,24 @@ hu{
                 other{"{0} pikométer"}
             }
             point{
+                case{
+                    accusative{
+                        one{"{0} pontot"}
+                        other{"{0} pontot"}
+                    }
+                    instrumental{
+                        one{"{0} ponttal"}
+                        other{"{0} ponttal"}
+                    }
+                    terminative{
+                        one{"{0} pontig"}
+                        other{"{0} pontig"}
+                    }
+                    translative{
+                        one{"{0} ponttá"}
+                        other{"{0} ponttá"}
+                    }
+                }
                 one{"{0} pont"}
                 other{"{0} pont"}
             }
@@ -1967,6 +2108,18 @@ hu{
                 dnam{"Nap-fényerő"}
                 one{"{0} Nap-fényerő"}
                 other{"{0} Nap-fényerő"}
+            }
+        }
+        magnetic{
+            tesla{
+                dnam{"tesla"}
+                one{"{0} tesla"}
+                other{"{0} tesla"}
+            }
+            weber{
+                dnam{"weber"}
+                one{"{0} weber"}
+                other{"{0} weber"}
             }
         }
         mass{
@@ -2419,9 +2572,32 @@ hu{
                 other{"{0} millibar"}
             }
             millimeter-ofhg{
+                case{
+                    accusative{
+                        one{"{0} higanymillimétert"}
+                        other{"{0} higanymillimétert"}
+                    }
+                    instrumental{
+                        one{"{0} higanymilliméterrel"}
+                        other{"{0} higanymilliméterrel"}
+                    }
+                    terminative{
+                        one{"{0} higanymilliméterig"}
+                        other{"{0} higanymilliméterig"}
+                    }
+                    translative{
+                        one{"{0} higanymilliméterré"}
+                        other{"{0} higanymilliméterré"}
+                    }
+                }
                 dnam{"higanymilliméter"}
                 one{"{0} higanymilliméter"}
                 other{"{0} higanymilliméter"}
+            }
+            ofhg{
+                dnam{"higany"}
+                one{"{0} higany"}
+                other{"{0} higany"}
             }
             pascal{
                 case{
@@ -2806,6 +2982,11 @@ hu{
                 one{"{0} bir. folyadék uncia"}
                 other{"{0} bir. folyadék uncia"}
             }
+            fluid-ounce-metric{
+                dnam{"metrikus folyadékuncia"}
+                one{"{0} metrikus folyadékuncia"}
+                other{"{0} metrikus folyadékuncia"}
+            }
             gallon{
                 dnam{"gallon"}
                 one{"{0} gallon"}
@@ -2978,14 +3159,22 @@ hu{
             millimole-per-liter{
                 dnam{"mmol/l"}
             }
+            ofglucose{
+                dnam{"Glc"}
+            }
+            part{
+                dnam{"rész"}
+                one{"{0} rész"}
+                other{"{0} rész"}
+            }
+            part-per-1e6{
+                dnam{"ppm"}
+            }
             percent{
                 dnam{"%"}
             }
             permille{
                 dnam{"‰"}
-            }
-            permillion{
-                dnam{"ppm"}
             }
         }
         consumption{
@@ -3005,6 +3194,11 @@ hu{
             month{
                 one{"{0} h."}
                 other{"{0} h."}
+            }
+        }
+        energy{
+            calorie-it{
+                dnam{"cal-IT"}
             }
         }
         graphics{
@@ -3105,14 +3299,25 @@ hu{
                 one{"{0} mmol/l"}
                 other{"{0} mmol/l"}
             }
+            mole{
+                dnam{"mól"}
+            }
+            ofglucose{
+                dnam{"Glc"}
+            }
+            part{
+                dnam{"rész"}
+                one{"{0} rész"}
+                other{"{0} rész"}
+            }
+            part-per-1e6{
+                dnam{"részecske/millió"}
+            }
             percent{
                 dnam{"százalék"}
             }
             permille{
                 dnam{"ezrelék"}
-            }
-            permillion{
-                dnam{"részecske/millió"}
             }
         }
         consumption{
@@ -3186,6 +3391,12 @@ hu{
                 other{"{0} hónap"}
                 per{"{0}/hó"}
             }
+            night{
+                dnam{"éjszakák"}
+                one{"{0} éjszaka"}
+                other{"{0} éjszaka"}
+                per{"{0}/éjszaka"}
+            }
             quarter{
                 dnam{"n.év"}
                 one{"{0} n.év"}
@@ -3223,6 +3434,9 @@ hu{
             }
         }
         energy{
+            calorie-it{
+                dnam{"cal-IT"}
+            }
             foodcalorie{
                 dnam{"cal"}
                 one{"{0} cal"}
@@ -3314,6 +3528,11 @@ hu{
             }
             solar-radius{
                 dnam{"Nap-sugár"}
+            }
+        }
+        light{
+            candela{
+                dnam{"kandela"}
             }
         }
         mass{

@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 sq{
     Currencies{
         AED{
@@ -517,11 +517,11 @@ sq{
         }
         SLE{
             "SLE",
-            "Leoni i Sierra-Leones",
+            "Leoni i Siera-Leones",
         }
         SLL{
             "SLL",
-            "Leoni i Sierra-Leones (1964—2022)",
+            "Leoni i Siera-Leones (1964–2022)",
         }
         SOS{
             "SOS",
@@ -635,6 +635,10 @@ sq{
             "EC$",
             "Dollari i Karaibeve Lindore",
         }
+        XCG{
+            "ANG",
+            "gilder karaibian",
+        }
         XOF{
             "F CFA",
             "Franga e Bregut të Fildishtë",
@@ -657,7 +661,11 @@ sq{
         }
         ZMW{
             "ZMW",
-            "Kuaça e Zambikut",
+            "Kuaça e Zambisë",
+        }
+        ZWG{
+            "ZWG",
+            "Ari i Zimbabves",
         }
     }
     Currencies%narrow{
@@ -1273,12 +1281,12 @@ sq{
             other{"sterlina e Ishullit të Shën-Helenës"}
         }
         SLE{
-            one{"leon i Sierra-Leones"}
-            other{"leonë të Sierra-Leones"}
+            one{"leon i Siera-Leones"}
+            other{"leonë të Siera-Leones"}
         }
         SLL{
-            one{"leon i Sierra-Leones (1964—2022)"}
-            other{"leonë të Sierra-Leones (1964—2022)"}
+            one{"leon i Siera-Leones (1964–2022)"}
+            other{"leonë të Siera-Leones (1964–2022)"}
         }
         SOS{
             one{"shilingë somaleze"}
@@ -1392,6 +1400,10 @@ sq{
             one{"dollar i Karaibeve Lindore"}
             other{"dollarë të Karaibeve Lindore"}
         }
+        XCG{
+            one{"gilder karaibian"}
+            other{"gilderë karaibianë"}
+        }
         XOF{
             one{"frangë e Bregut të Fildishtë"}
             other{"franga të Bregut të Fildishtë"}
@@ -1413,12 +1425,12 @@ sq{
             other{"randë afrikano-jugorë"}
         }
         ZMW{
-            one{"kuaçë zambiku"}
-            other{"kuaça zambiku"}
+            one{"kuaçë zambie"}
+            other{"kuaça zambie"}
         }
-    }
-    CurrencyUnitPatterns{
-        one{"{0} {1}"}
-        other{"{0} {1}"}
+        ZWG{
+            one{"ar i Zimbabves"}
+            other{"arë të Zimbabves"}
+        }
     }
 }

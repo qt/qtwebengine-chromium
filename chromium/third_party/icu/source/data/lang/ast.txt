@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 ast{
     Keys{
         calendar{"calendariu"}
@@ -206,7 +206,6 @@ ast{
         gmh{"altualemán mediu"}
         gn{"guaraní"}
         goh{"altualemán antiguu"}
-        gom{"goan konkani"}
         gon{"gondi"}
         gor{"gorontalo"}
         got{"góticu"}
@@ -834,16 +833,13 @@ ast{
             standard{"formatu monetariu estándar"}
         }
         collation{
-            big5han{"orde de clasificación chinu tradicional - Big5"}
             compat{"orde de clasificación anterior, por compatibilidá"}
             dictionary{"orde de clasificación de diccionariu"}
             ducet{"orde de clasificación Unicode predetermináu"}
             emoji{"orde de clasificación Emoji"}
             eor{"regles d’ordenamientu europees"}
-            gb2312han{"orde de clasificación chinu simplificáu - GB2312"}
             phonebook{"orde de clasificación de llista telefónica"}
             pinyin{"orde de clasificación pinyin"}
-            reformed{"orde de clasificación reformáu"}
             search{"gueta xeneral"}
             searchjl{"gueta por consonante Hangul d’aniciu"}
             standard{"orde de clasificación estándar"}

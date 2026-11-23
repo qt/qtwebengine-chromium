@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 sk{
     Currencies{
         ADP{
@@ -905,7 +905,7 @@ sk{
         }
         SLL{
             "SLL",
-            "sierraleonský leone (1964—2022)",
+            "sierraleonský leone (1964 – 2022)",
         }
         SOS{
             "SOS",
@@ -1103,6 +1103,10 @@ sk{
             "EC$",
             "východokaribský dolár",
         }
+        XCG{
+            "Cg",
+            "karibský gulden",
+        }
         XDR{
             "XDR",
             "SDR",
@@ -1206,6 +1210,10 @@ sk{
         ZWD{
             "ZWD",
             "zimbabwiansky dolár (1980 – 2008)",
+        }
+        ZWG{
+            "ZWG",
+            "zimbabwiansky zlatý",
         }
         ZWL{
             "ZWL",
@@ -2576,10 +2584,10 @@ sk{
             other{"sierraleonských leone"}
         }
         SLL{
-            few{"sierraleonské leone (1964—2022)"}
-            many{"sierraleonského leone (1964—2022)"}
-            one{"sierraleonský leone (1964—2022)"}
-            other{"sierraleonských leone (1964—2022)"}
+            few{"sierraleonské leone (1964 – 2022)"}
+            many{"sierraleonského leone (1964 – 2022)"}
+            one{"sierraleonský leone (1964 – 2022)"}
+            other{"sierraleonských leone (1964 – 2022)"}
         }
         SOS{
             few{"somálske šilingy"}
@@ -2875,6 +2883,12 @@ sk{
             one{"východokaribský dolár"}
             other{"východokaribských dolárov"}
         }
+        XCG{
+            few{"karibské guldeny"}
+            many{"karibského guldena"}
+            one{"karibský gulden"}
+            other{"karibských guldenov"}
+        }
         XEU{
             few{"európske menové jednotky"}
             many{"európskej menovej jednotky"}
@@ -3019,6 +3033,12 @@ sk{
             one{"zimbabwiansky dolár (1980 – 2008)"}
             other{"zimbabwianskych dolárov (1980 – 2008)"}
         }
+        ZWG{
+            few{"zimbabwianske zlaté"}
+            many{"zimbabwianskeho zlatého"}
+            one{"zimbabwiansky zlatý"}
+            other{"zimbabwianskych zlatých"}
+        }
         ZWL{
             few{"zimbabwianske doláre (2009)"}
             many{"zimbabwianskeho dolára (2009)"}
@@ -3031,11 +3051,5 @@ sk{
             one{"zimbabwiansky dolár (2008)"}
             other{"zimbabwianskych dolárov (2008)"}
         }
-    }
-    CurrencyUnitPatterns{
-        few{"{0} {1}"}
-        many{"{0} {1}"}
-        one{"{0} {1}"}
-        other{"{0} {1}"}
     }
 }

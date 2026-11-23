@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 yrl{
     Keys{
         calendar{"Akayupawa"}
@@ -757,16 +757,13 @@ yrl{
             tertiary{"Reyupurawaka asẽtu-ita/turusuwa-ita yuí mirĩwa-ita/turususawa"}
         }
         collation{
-            big5han{"Xinanhẽẽga rikusawarupí muakaresawa - Big5"}
             compat{"Muakaresawa rinũdewa nũgarásawa"}
             dictionary{"Disiunariu muakaresawa"}
             ducet{"Unicode muakaresawa retewa"}
             eor{"Tekô eurupawara muakarésawa supé"}
-            gb2312han{"Xinanheẽga iwasuĩma muakarewa - GB2312"}
             phonebook{"Terefuni sesewara muakaresawa"}
             phonetic{"Yupurawakasawa terefuniara mukaresawa"}
             pinyin{"Pin-yin mukaresawa"}
-            reformed{"Muakaresawa amũrupisawaira"}
             search{"Sikaisá purusawa panhérupí"}
             searchjl{"Resikai kũsuãti uyupiruwa hangul rupí"}
             standard{"Mukaresawa retewa"}

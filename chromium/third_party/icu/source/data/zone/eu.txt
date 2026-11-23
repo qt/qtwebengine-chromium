@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 eu{
     zoneStrings{
         "Africa:Accra"{
@@ -54,29 +54,11 @@ eu{
         "America:Anguilla"{
             ec{"Aingira"}
         }
-        "America:Araguaina"{
-            ec{"Araguaína"}
-        }
-        "America:Argentina:Tucuman"{
-            ec{"Tucumán"}
-        }
         "America:Cayman"{
             ec{"Kaiman"}
         }
-        "America:Cordoba"{
-            ec{"Córdoba"}
-        }
-        "America:Cuiaba"{
-            ec{"Cuiabá"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
-        }
         "America:Dominica"{
             ec{"Dominika"}
-        }
-        "America:Eirunepe"{
-            ec{"Eirunepé"}
         }
         "America:Guadeloupe"{
             ec{"Guadalupe"}
@@ -87,14 +69,8 @@ eu{
         "America:Jamaica"{
             ec{"Jamaika"}
         }
-        "America:Maceio"{
-            ec{"Maceió"}
-        }
         "America:Martinique"{
             ec{"Martinika"}
-        }
-        "America:Mazatlan"{
-            ec{"Mazatlán"}
         }
         "America:Mexico_City"{
             ec{"Mexiko Hiria"}
@@ -113,15 +89,6 @@ eu{
         }
         "America:Port_of_Spain"{
             ec{"Port-of-Spain"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
-        }
-        "America:Santarem"{
-            ec{"Santarém"}
-        }
-        "America:Sao_Paulo"{
-            ec{"São Paulo"}
         }
         "America:St_Barthelemy"{
             ec{"Saint-Barthélemy"}
@@ -165,9 +132,6 @@ eu{
         "Asia:Chita"{
             ec{"Txita"}
         }
-        "Asia:Choibalsan"{
-            ec{"Txoibalsan"}
-        }
         "Asia:Colombo"{
             ec{"Kolombo"}
         }
@@ -176,9 +140,6 @@ eu{
         }
         "Asia:Dushanbe"{
             ec{"Duxanbe"}
-        }
-        "Asia:Hovd"{
-            ec{"Khovd"}
         }
         "Asia:Kamchatka"{
             ec{"Kamtxatka"}
@@ -240,9 +201,6 @@ eu{
         "Asia:Ulaanbaatar"{
             ec{"Ulan Bator"}
         }
-        "Asia:Urumqi"{
-            ec{"Ürümqi"}
-        }
         "Asia:Vientiane"{
             ec{"Vientian"}
         }
@@ -270,9 +228,6 @@ eu{
         "Atlantic:St_Helena"{
             ec{"Santa Helena"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"ordu unibertsal koordinatua"}
         }
@@ -290,9 +245,6 @@ eu{
         }
         "Europe:Bucharest"{
             ec{"Bukarest"}
-        }
-        "Europe:Busingen"{
-            ec{"Büsingen"}
         }
         "Europe:Copenhagen"{
             ec{"Kopenhage"}
@@ -334,14 +286,8 @@ eu{
         "Europe:Rome"{
             ec{"Erroma"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Ulyanovsk"{
             ec{"Ulianovsk"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Uzhhorod"}
         }
         "Europe:Vatican"{
             ec{"Vatikano Hiria"}
@@ -352,14 +298,8 @@ eu{
         "Europe:Warsaw"{
             ec{"Varsovia"}
         }
-        "Europe:Zaporozhye"{
-            ec{"Zaporizhia"}
-        }
         "Europe:Zurich"{
             ec{"Zürich"}
-        }
-        "Indian:Mahe"{
-            ec{"Mahé"}
         }
         "Indian:Maldives"{
             ec{"Maldivak"}
@@ -373,17 +313,11 @@ eu{
         "Pacific:Efate"{
             ec{"Éfaté"}
         }
-        "Pacific:Enderbury"{
-            ec{"Enderbury"}
-        }
         "Pacific:Galapagos"{
             ec{"Galapagoak"}
         }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
-            sd{"HDT"}
-            sg{"HST"}
-            ss{"HST"}
         }
         "Pacific:Marquesas"{
             ec{"Markesak"}
@@ -409,9 +343,7 @@ eu{
             ls{"Afrikako hegoaldeko ordua"}
         }
         "meta:Africa_Western"{
-            ld{"Afrikako mendebaldeko udako ordua"}
-            lg{"Afrikako mendebaldeko ordua"}
-            ls{"Afrikako mendebaldeko ordu estandarra"}
+            ls{"Afrikako mendebaldeko ordua"}
         }
         "meta:Alaska"{
             ld{"Alaskako udako ordua"}
@@ -586,11 +518,6 @@ eu{
             lg{"Txinako ordua"}
             ls{"Txinako ordu estandarra"}
         }
-        "meta:Choibalsan"{
-            ld{"Txoibalsango udako ordua"}
-            lg{"Txoibalsango ordua"}
-            ls{"Txoibalsango ordu estandarra"}
-        }
         "meta:Christmas"{
             ls{"Christmas uharteko ordua"}
         }
@@ -709,6 +636,10 @@ eu{
         "meta:Guyana"{
             ls{"Guyanako ordua"}
         }
+        "meta:Hawaii"{
+            ls{"Hawaii-Aleutiar uharteetako ordu estandarra"}
+            ss{"HAST"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Hawaii-Aleutiar uharteetako udako ordua"}
             lg{"Hawaii-Aleutiar uharteetako ordua"}
@@ -770,6 +701,9 @@ eu{
             lg{"Petropavlovsk-Kamchatskiko ordua"}
             ls{"Petropavlovsk-Kamchatskiko ordu estandarra"}
         }
+        "meta:Kazakhstan"{
+            ls{"Kazakhstango ordua"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Kazakhstango ekialdeko ordua"}
         }
@@ -808,9 +742,6 @@ eu{
             lg{"Macaoko ordua"}
             ls{"Macaoko ordu estandarra"}
         }
-        "meta:Macquarie"{
-            ls{"Macquarie uharteko ordua"}
-        }
         "meta:Magadan"{
             ld{"Magadango udako ordua"}
             lg{"Magadango ordua"}
@@ -835,11 +766,6 @@ eu{
         }
         "meta:Mawson"{
             ls{"Mawsoneko ordua"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Mexikoko ipar-ekialdeko udako ordua"}
-            lg{"Mexikoko ipar-ekialdeko ordua"}
-            ls{"Mexikoko ipar-ekialdeko ordu estandarra"}
         }
         "meta:Mexico_Pacific"{
             ld{"Mexikoko Pazifikoko udako ordua"}
@@ -1073,7 +999,7 @@ eu{
         "meta:Yukon"{
             ls{"Yukongo ordua"}
         }
-        hourFormat{"+HH:mm;−HH:mm"}
+        hourFormat{"+HH:mm;–HH:mm"}
         regionFormat{"{0} aldeko ordua"}
         regionFormatDaylight{"{0} (udako ordua)"}
         regionFormatStandard{"{0} aldeko ordu estandarra"}

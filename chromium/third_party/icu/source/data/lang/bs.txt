@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 bs{
     Keys{
         calendar{"kalendar"}
@@ -14,10 +14,13 @@ bs{
         colStrength{"Jačina sortiranja"}
         collation{"Sortiranje"}
         currency{"Valuta"}
+        em{"Emoji prezentacija"}
         hc{"Format vremena (12 ili 24)"}
         lb{"Stil prijeloma reda"}
+        lw{"Prelom reda u riječi"}
         ms{"Mjerni sistem"}
         numbers{"Brojevi"}
+        ss{"Prelom rečenice nakon skraćenice"}
         timezone{"Vremenska zona"}
         va{"Varijanta zemlje/jezika"}
         x{"Privatna upotreba"}
@@ -78,6 +81,7 @@ bs{
         bin{"bini"}
         bkm{"kom"}
         bla{"siksika"}
+        blo{"anii"}
         bm{"bambara"}
         bn{"bengalski"}
         bo{"tibetanski"}
@@ -290,6 +294,7 @@ bs{
         kv{"komi"}
         kw{"kornski"}
         kwk{"kvakvala"}
+        kxv{"kuvi"}
         ky{"kirgiški"}
         la{"latinski"}
         lad{"ladino"}
@@ -316,7 +321,6 @@ bs{
         lua{"luba-lulua"}
         lui{"luiseno"}
         lun{"lunda"}
-        luo{"luo"}
         lus{"mizo"}
         luy{"luhija"}
         lv{"latvijski"}
@@ -494,6 +498,7 @@ bs{
         swb{"komorski"}
         syc{"klasični sirijski"}
         syr{"sirijski"}
+        szl{"šleski"}
         ta{"tamilski"}
         tce{"južni tučoni"}
         te{"telugu"}
@@ -540,10 +545,10 @@ bs{
         und{"nepoznati jezik"}
         ur{"urdu"}
         uz{"uzbečki"}
-        vai{"vai"}
         ve{"venda"}
         vec{"venecijanski"}
         vi{"vijetnamski"}
+        vmw{"makua"}
         vo{"volapuk"}
         vot{"votski"}
         vun{"vunjo"}
@@ -557,6 +562,7 @@ bs{
         wuu{"Wu kineski"}
         xal{"kalmik"}
         xh{"hosa"}
+        xnr{"kangri"}
         xog{"soga"}
         yao{"jao"}
         yap{"japeški"}
@@ -578,6 +584,12 @@ bs{
         zun{"zuni"}
         zxx{"bez lingvističkog sadržaja"}
         zza{"zaza"}
+    }
+    Languages%core{
+        ku{"kurdski"}
+    }
+    Languages%extension{
+        ku{"kurmanji"}
     }
     Languages%long{
         zh_Hans{"kineski (pojednostavljeni standardni)"}
@@ -809,7 +821,7 @@ bs{
         calendar{
             buddhist{"budistički kalendar"}
             chinese{"kineski kalendar"}
-            coptic{"Koptski kalendar"}
+            coptic{"koptski kalendar"}
             dangi{"dangi kalendar"}
             ethiopic{"etiopski kalendar"}
             ethiopic-amete-alem{"etiopski kalendar \u0022Amete Alem\u0022"}
@@ -818,15 +830,37 @@ bs{
             indian{"indijski nacionalni kalendar"}
             islamic{"islamski kalendar"}
             islamic-civil{"islamski građanski kalendar, tabelarni"}
+            islamic-rgsa{"islamski kalendar za Saudijsku Arabiju"}
+            islamic-tbla{"islamski kalendar, tabelarni, astronomska epoha"}
             islamic-umalqura{"islamski kalendar, Umm al-Qura"}
             iso8601{"kalendar ISO-8601"}
             japanese{"japanski kalendar"}
             persian{"perzijski kalendar"}
             roc{"kalendar Republike Kine"}
         }
+        calendar%core{
+            buddhist{"budistički"}
+            chinese{"kineski"}
+            coptic{"koptski"}
+            dangi{"dangi"}
+            ethiopic{"etiopski"}
+            ethiopic-amete-alem{"etiopski Amete Alem"}
+            gregorian{"gregorijanski"}
+            hebrew{"hebrejski"}
+            islamic{"islamski"}
+            islamic-civil{"islamski (tabelarni, građanski)"}
+            islamic-umalqura{"islamski (Umm al-Qura)"}
+            japanese{"japanski"}
+            persian{"perzijski"}
+            roc{"Republika Kina"}
+        }
         cf{
             account{"računovodstveni format valute"}
             standard{"standardni format valute"}
+        }
+        cf%core{
+            account{"Računovodstvo"}
+            standard{"Standardno"}
         }
         colAlternate{
             non-ignorable{"Poredaj simbole"}
@@ -861,17 +895,14 @@ bs{
             tertiary{"Poredaj po naglascima/veličini/širini"}
         }
         collation{
-            big5han{"Tradicionalno kinesko sortiranje"}
             compat{"Prethodno sortiranje radi usklađenosti"}
             dictionary{"Rječničko sortiranje"}
             ducet{"standardno Unicode sortiranje"}
             emoji{"Sortiranje po emoji sličicama"}
             eor{"Evropska pravila sortiranja"}
-            gb2312han{"Pojednostavljeno kinesko sortiranje - GB2312"}
             phonebook{"Sortiranje kao telefonski imenik"}
             phonetic{"Fonetsko sortiranje"}
             pinyin{"Pinjin sortiranje"}
-            reformed{"Reformirano sortiranje"}
             search{"općenito pretraživanje"}
             searchjl{"Pretraživanje po početnom suglasniku hangula"}
             standard{"standardno sortiranje"}
@@ -880,10 +911,20 @@ bs{
             unihan{"sortiranje prema korijenu i potezu"}
             zhuyin{"zhuyin sortiranje"}
         }
+        collation%core{
+            ducet{"standardni Unicode"}
+            search{"pretraga"}
+            standard{"standardno"}
+        }
         d0{
             fwidth{"Široki"}
             hwidth{"Uski"}
             npinyin{"Numerički"}
+        }
+        em%core{
+            default{"Zadano"}
+            emoji{"Emoji"}
+            text{"Tekst"}
         }
         hc{
             h11{"12-satni format (0–11)"}
@@ -891,10 +932,27 @@ bs{
             h23{"24-satni format (0–23)"}
             h24{"24-satni format (1–24)"}
         }
+        hc%core{
+            h11{"12 (0–11)"}
+            h12{"12 (1–12)"}
+            h23{"24 (0–23)"}
+            h24{"24 (1–24)"}
+        }
         lb{
             loose{"Slobodni stil prijeloma reda"}
             normal{"Normalni stil prijeloma reda"}
             strict{"Strogi stil prijeloma reda"}
+        }
+        lb%core{
+            loose{"Slobodni"}
+            normal{"Normalni"}
+            strict{"Strogi"}
+        }
+        lw%core{
+            breakall{"podijeli sve"}
+            keepall{"zadrži sve"}
+            normal{"normalno"}
+            phrase{"zadrži u fazama"}
         }
         m0{
             bgn{"US BGN transliteracija"}
@@ -904,6 +962,11 @@ bs{
             metric{"metrički sistem"}
             uksystem{"britanski mjerni sistem"}
             ussystem{"američki mjerni sistem"}
+        }
+        ms%core{
+            metric{"Metrički"}
+            uksystem{"UK"}
+            ussystem{"američki"}
         }
         numbers{
             ahom{"ahom cifre"}
@@ -964,7 +1027,7 @@ bs{
             mymrshan{"mijanmarske šan cifre"}
             mymrtlng{"mijanmarske tai laing cifre"}
             nagm{"nag mundari cifre"}
-            native{"Izvorne cifre"}
+            native{"izvorni brojevi"}
             nkoo{"n’ko cifre"}
             olck{"ol čiki cifre"}
             orya{"orijski brojevi"}
@@ -991,6 +1054,10 @@ bs{
             vaii{"Vai cifre"}
             wara{"warang citi cifre"}
             wcho{"vančo cifre"}
+        }
+        ss%core{
+            none{"Uključeno"}
+            standard{"Isključeno"}
         }
     }
     Variants{

@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 qu{
     zoneStrings{
         "Africa:Abidjan"{
@@ -195,9 +195,6 @@ qu{
         "Australia:Adelaide"{
             ec{"Adelaida"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Australia:Sydney"{
             ec{"Sidney"}
         }
@@ -274,9 +271,6 @@ qu{
         "Indian:Maldives"{
             ec{"Maldivas"}
         }
-        "Pacific:Enderbury"{
-            ec{"Enderbury"}
-        }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
         }
@@ -293,9 +287,7 @@ qu{
             ls{"Hora de Sudafrica"}
         }
         "meta:Africa_Western"{
-            ld{"Hora Estandar de Verano de Africa Occidental"}
-            lg{"Hora de Africa Occidental"}
-            ls{"Hora Estandar de Africa Occidental"}
+            ls{"Hora de Africa Occidental"}
         }
         "meta:Alaska"{
             ld{"Hora de Verano de Alaska"}
@@ -429,11 +421,6 @@ qu{
             lg{"Hora de China"}
             ls{"Hora Estandar de China"}
         }
-        "meta:Choibalsan"{
-            ld{"Hora de Verano de Choybalsan"}
-            lg{"Hora de Choybalsan"}
-            ls{"Hora Estandar de Choybalsan"}
-        }
         "meta:Christmas"{
             ls{"Hora de Isla Christmas"}
         }
@@ -539,6 +526,9 @@ qu{
         "meta:Guyana"{
             ls{"Hora de Guyana"}
         }
+        "meta:Hawaii"{
+            ls{"Hora Estandar de Hawai-Aleutiano"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Hora de Verano de Hawai-Aleutiano"}
             lg{"Hora de Hawai-Aleutiano"}
@@ -592,6 +582,9 @@ qu{
             lg{"Hora de Japón"}
             ls{"Hora Estandar de Japón"}
         }
+        "meta:Kazakhstan"{
+            ls{"Hora de Kazajistán"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Hora de Kazajistán Oriental"}
         }
@@ -622,9 +615,6 @@ qu{
             lg{"Hora de Lord Howe"}
             ls{"Hora Estandar de Lord Howe"}
         }
-        "meta:Macquarie"{
-            ls{"Hora de Isla Macquarie"}
-        }
         "meta:Magadan"{
             ld{"Hora de Verano de Magadan"}
             lg{"Hora de Magadan"}
@@ -649,11 +639,6 @@ qu{
         }
         "meta:Mawson"{
             ls{"Hora de Mawson"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Hora de Verano del Noroeste de México"}
-            lg{"Hora Estandar de Verano de México"}
-            ls{"Hora Estandar del Noroeste de México"}
         }
         "meta:Mexico_Pacific"{
             ld{"Hora de Verano del Pacífico Mexicano"}

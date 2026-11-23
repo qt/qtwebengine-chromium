@@ -1,8 +1,11 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 sk{
     zoneStrings{
+        "Africa:Accra"{
+            ec{"Akkra"}
+        }
         "Africa:Addis_Ababa"{
             ec{"Addis Abeba"}
         }
@@ -11,6 +14,9 @@ sk{
         }
         "Africa:Cairo"{
             ec{"Káhira"}
+        }
+        "Africa:Conakry"{
+            ec{"Konakry"}
         }
         "Africa:Djibouti"{
             ec{"Džibuti"}
@@ -21,14 +27,8 @@ sk{
         "Africa:Khartoum"{
             ec{"Chartúm"}
         }
-        "Africa:Lome"{
-            ec{"Lomé"}
-        }
         "Africa:Mogadishu"{
             ec{"Mogadišo"}
-        }
-        "Africa:Ndjamena"{
-            ec{"N’Djamena"}
         }
         "Africa:Sao_Tome"{
             ec{"Svätý Tomáš"}
@@ -36,38 +36,17 @@ sk{
         "Africa:Tripoli"{
             ec{"Tripolis"}
         }
-        "America:Asuncion"{
-            ec{"Asunción"}
-        }
         "America:Bahia_Banderas"{
             ec{"Bahia Banderas"}
-        }
-        "America:Belem"{
-            ec{"Belém"}
-        }
-        "America:Bogota"{
-            ec{"Bogotá"}
         }
         "America:Cayman"{
             ec{"Kajmanie ostrovy"}
         }
-        "America:Cordoba"{
-            ec{"Córdoba"}
-        }
         "America:Costa_Rica"{
             ec{"Kostarika"}
         }
-        "America:Cuiaba"{
-            ec{"Cuiabá"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
-        }
         "America:Dominica"{
             ec{"Dominika"}
-        }
-        "America:Eirunepe"{
-            ec{"Eirunepé"}
         }
         "America:El_Salvador"{
             ec{"Salvádor"}
@@ -75,14 +54,8 @@ sk{
         "America:Jamaica"{
             ec{"Jamajka"}
         }
-        "America:Maceio"{
-            ec{"Maceió"}
-        }
         "America:Martinique"{
             ec{"Martinik"}
-        }
-        "America:Mazatlan"{
-            ec{"Mazatlán"}
         }
         "America:Mexico_City"{
             ec{"México"}
@@ -99,15 +72,6 @@ sk{
         "America:Puerto_Rico"{
             ec{"Portoriko"}
         }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
-        }
-        "America:Santarem"{
-            ec{"Santarém"}
-        }
-        "America:Sao_Paulo"{
-            ec{"São Paulo"}
-        }
         "America:St_Barthelemy"{
             ec{"Svätý Bartolomej"}
         }
@@ -122,6 +86,9 @@ sk{
         }
         "Antarctica:Syowa"{
             ec{"Šówa"}
+        }
+        "Asia:Almaty"{
+            ec{"Alma‑Ata"}
         }
         "Asia:Amman"{
             ec{"Ammán"}
@@ -155,9 +122,6 @@ sk{
         }
         "Asia:Chita"{
             ec{"Čita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Čojbalsan"}
         }
         "Asia:Colombo"{
             ec{"Kolombo"}
@@ -312,9 +276,6 @@ sk{
         "Atlantic:St_Helena"{
             ec{"Svätá Helena"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"koordinovaný svetový čas"}
         }
@@ -341,9 +302,6 @@ sk{
         }
         "Europe:Budapest"{
             ec{"Budapešť"}
-        }
-        "Europe:Busingen"{
-            ec{"Büsingen"}
         }
         "Europe:Chisinau"{
             ec{"Kišiňov"}
@@ -397,14 +355,8 @@ sk{
         "Europe:Stockholm"{
             ec{"Štokholm"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Ulyanovsk"{
             ec{"Uľjanovsk"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Užhorod"}
         }
         "Europe:Vatican"{
             ec{"Vatikán"}
@@ -417,9 +369,6 @@ sk{
         }
         "Europe:Zagreb"{
             ec{"Záhreb"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Záporožie"}
         }
         "Europe:Zurich"{
             ec{"Zürich"}
@@ -436,23 +385,14 @@ sk{
         "Indian:Kerguelen"{
             ec{"Kergueleny"}
         }
-        "Indian:Mahe"{
-            ec{"Mahé"}
-        }
         "Indian:Maldives"{
             ec{"Maldivy"}
         }
         "Indian:Mauritius"{
             ec{"Maurícius"}
         }
-        "Indian:Reunion"{
-            ec{"Réunion"}
-        }
         "Pacific:Easter"{
             ec{"Veľkonočný ostrov"}
-        }
-        "Pacific:Enderbury"{
-            ec{"Enderbury"}
         }
         "Pacific:Fiji"{
             ec{"Fidži"}
@@ -462,15 +402,9 @@ sk{
         }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
-            sd{"HDT"}
-            sg{"HST"}
-            ss{"HST"}
         }
         "Pacific:Marquesas"{
             ec{"Markézy"}
-        }
-        "Pacific:Noumea"{
-            ec{"Nouméa"}
         }
         "meta:Acre"{
             ld{"acrejský letný čas"}
@@ -490,9 +424,7 @@ sk{
             ls{"juhoafrický čas"}
         }
         "meta:Africa_Western"{
-            ld{"západoafrický letný čas"}
-            lg{"západoafrický čas"}
-            ls{"západoafrický štandardný čas"}
+            ls{"západoafrický čas"}
         }
         "meta:Alaska"{
             ld{"aljašský letný čas"}
@@ -649,11 +581,6 @@ sk{
             lg{"čínsky čas"}
             ls{"čínsky štandardný čas"}
         }
-        "meta:Choibalsan"{
-            ld{"čojbalsanský letný čas"}
-            lg{"čojbalsanský čas"}
-            ls{"čojbalsanský štandardný čas"}
-        }
         "meta:Christmas"{
             ls{"čas Vianočného ostrova"}
         }
@@ -765,6 +692,9 @@ sk{
         "meta:Guyana"{
             ls{"guyanský čas"}
         }
+        "meta:Hawaii"{
+            ls{"havajsko-aleutský štandardný čas"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"havajsko-aleutský letný čas"}
             lg{"havajsko-aleutský čas"}
@@ -823,6 +753,9 @@ sk{
             lg{"Petropavlovsk-Kamčatský čas"}
             ls{"Petropavlovsk-Kamčatský štandardný čas"}
         }
+        "meta:Kazakhstan"{
+            ls{"kazachstanský čas"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"východokazachstanský čas"}
         }
@@ -861,9 +794,6 @@ sk{
             lg{"macajský čas"}
             ls{"macajský štandardný čas"}
         }
-        "meta:Macquarie"{
-            ls{"čas ostrova Macquarie"}
-        }
         "meta:Magadan"{
             ld{"magadanský letný čas"}
             lg{"magadanský čas"}
@@ -888,11 +818,6 @@ sk{
         }
         "meta:Mawson"{
             ls{"čas Mawsonovej stanice"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"severozápadný mexický letný čas"}
-            lg{"severozápadný mexický čas"}
-            ls{"severozápadný mexický štandardný čas"}
         }
         "meta:Mexico_Pacific"{
             ld{"mexický tichomorský letný čas"}

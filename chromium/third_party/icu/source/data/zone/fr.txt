@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 fr{
     zoneStrings{
         "Africa:Addis_Ababa"{
@@ -15,35 +15,14 @@ fr{
         "Africa:El_Aaiun"{
             ec{"Laâyoune"}
         }
-        "Africa:Lome"{
-            ec{"Lomé"}
-        }
         "Africa:Mogadishu"{
             ec{"Mogadiscio"}
-        }
-        "Africa:Ndjamena"{
-            ec{"N’Djamena"}
-        }
-        "Africa:Sao_Tome"{
-            ec{"São Tomé"}
         }
         "Africa:Tripoli"{
             ec{"Tripoli (Libye)"}
         }
-        "America:Araguaina"{
-            ec{"Araguaína"}
-        }
-        "America:Argentina:Rio_Gallegos"{
-            ec{"Río Gallegos"}
-        }
-        "America:Argentina:Tucuman"{
-            ec{"Tucumán"}
-        }
         "America:Argentina:Ushuaia"{
             ec{"Ushuaïa"}
-        }
-        "America:Asuncion"{
-            ec{"Asunción"}
         }
         "America:Bahia_Banderas"{
             ec{"Bahia de Banderas"}
@@ -51,29 +30,14 @@ fr{
         "America:Barbados"{
             ec{"La Barbade"}
         }
-        "America:Belem"{
-            ec{"Belém"}
-        }
         "America:Cayman"{
             ec{"Caïmans"}
-        }
-        "America:Cordoba"{
-            ec{"Córdoba"}
-        }
-        "America:Cuiaba"{
-            ec{"Cuiabá"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
         }
         "America:Detroit"{
             ec{"Détroit"}
         }
         "America:Dominica"{
             ec{"Dominique"}
-        }
-        "America:Eirunepe"{
-            ec{"Eirunepé"}
         }
         "America:Grenada"{
             ec{"Grenade"}
@@ -108,14 +72,8 @@ fr{
         "America:Kentucky:Monticello"{
             ec{"Monticello [Kentucky]"}
         }
-        "America:Maceio"{
-            ec{"Maceió"}
-        }
         "America:Manaus"{
             ec{"Manaos"}
-        }
-        "America:Mazatlan"{
-            ec{"Mazatlán"}
         }
         "America:Mexico_City"{
             ec{"Mexico"}
@@ -135,17 +93,8 @@ fr{
         "America:Puerto_Rico"{
             ec{"Porto Rico"}
         }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
-        }
-        "America:Santarem"{
-            ec{"Santarém"}
-        }
         "America:Santo_Domingo"{
             ec{"Saint-Domingue"}
-        }
-        "America:Sao_Paulo"{
-            ec{"São Paulo"}
         }
         "America:St_Barthelemy"{
             ec{"Saint-Barthélemy"}
@@ -167,12 +116,6 @@ fr{
         }
         "America:Thule"{
             ec{"Thulé"}
-        }
-        "Antarctica:DumontDUrville"{
-            ec{"Dumont-d’Urville"}
-        }
-        "Antarctica:Syowa"{
-            ec{"Showa"}
         }
         "Asia:Almaty"{
             ec{"Alma Ata"}
@@ -209,9 +152,6 @@ fr{
         }
         "Asia:Chita"{
             ec{"Tchita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Tchoïbalsan"}
         }
         "Asia:Damascus"{
             ec{"Damas"}
@@ -306,9 +246,6 @@ fr{
         "Asia:Ulaanbaatar"{
             ec{"Oulan-Bator"}
         }
-        "Asia:Urumqi"{
-            ec{"Ürümqi"}
-        }
         "Asia:Yakutsk"{
             ec{"Iakoutsk"}
         }
@@ -345,14 +282,11 @@ fr{
         "Australia:Adelaide"{
             ec{"Adélaïde"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"temps universel coordonné"}
         }
         "Etc:Unknown"{
-            ec{"ville inconnue"}
+            ec{"lieu inconnu"}
         }
         "Europe:Andorra"{
             ec{"Andorre"}
@@ -365,9 +299,6 @@ fr{
         }
         "Europe:Bucharest"{
             ec{"Bucarest"}
-        }
-        "Europe:Busingen"{
-            ec{"Büsingen"}
         }
         "Europe:Copenhagen"{
             ec{"Copenhague"}
@@ -400,14 +331,8 @@ fr{
         "Europe:San_Marino"{
             ec{"Saint-Marin"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
         "Europe:Ulyanovsk"{
             ec{"Oulianovsk"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Oujgorod"}
         }
         "Europe:Vatican"{
             ec{"Le Vatican"}
@@ -417,15 +342,6 @@ fr{
         }
         "Europe:Warsaw"{
             ec{"Varsovie"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Zaporojie"}
-        }
-        "Indian:Comoro"{
-            ec{"Comores"}
-        }
-        "Indian:Mahe"{
-            ec{"Mahé"}
         }
         "Indian:Mauritius"{
             ec{"Maurice"}
@@ -439,26 +355,14 @@ fr{
         "Pacific:Efate"{
             ec{"Éfaté"}
         }
-        "Pacific:Enderbury"{
-            ec{"Enderbury"}
-        }
         "Pacific:Fiji"{
             ec{"Fidji"}
-        }
-        "Pacific:Galapagos"{
-            ec{"Galápagos"}
         }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
         }
-        "Pacific:Kanton"{
-            ec{"Canton"}
-        }
         "Pacific:Marquesas"{
             ec{"Marquises"}
-        }
-        "Pacific:Noumea"{
-            ec{"Nouméa"}
         }
         "Pacific:Palau"{
             ec{"Palaos"}
@@ -481,9 +385,7 @@ fr{
             ls{"heure normale d’Afrique méridionale"}
         }
         "meta:Africa_Western"{
-            ld{"heure d’été d’Afrique de l’Ouest"}
-            lg{"heure d’Afrique de l’Ouest"}
-            ls{"heure normale d’Afrique de l’Ouest"}
+            ls{"heure d’Afrique de l’Ouest"}
         }
         "meta:Alaska"{
             ld{"heure d’été de l’Alaska"}
@@ -637,11 +539,6 @@ fr{
             lg{"heure de la Chine"}
             ls{"heure normale de la Chine"}
         }
-        "meta:Choibalsan"{
-            ld{"heure d’été de Choibalsan"}
-            lg{"heure de Choibalsan"}
-            ls{"heure normale de Choibalsan"}
-        }
         "meta:Christmas"{
             ls{"heure de l’île Christmas"}
         }
@@ -750,6 +647,9 @@ fr{
         "meta:Guyana"{
             ls{"heure du Guyana"}
         }
+        "meta:Hawaii"{
+            ls{"heure normale d’Hawaï - Aléoutiennes"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"heure d’été d’Hawaï - Aléoutiennes"}
             lg{"heure d’Hawaï - Aléoutiennes"}
@@ -808,6 +708,9 @@ fr{
             lg{"heure de Petropavlovsk-Kamchatski"}
             ls{"heure normale de Petropavlovsk-Kamchatski"}
         }
+        "meta:Kazakhstan"{
+            ls{"heure du Kazakhstan"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"heure de l’Est du Kazakhstan"}
         }
@@ -838,9 +741,6 @@ fr{
             lg{"heure de Lord Howe"}
             ls{"heure normale de Lord Howe"}
         }
-        "meta:Macquarie"{
-            ls{"heure de l’île Macquarie"}
-        }
         "meta:Magadan"{
             ld{"heure d’été de Magadan"}
             lg{"heure de Magadan"}
@@ -865,11 +765,6 @@ fr{
         }
         "meta:Mawson"{
             ls{"heure de Mawson"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"heure d’été du Nord-Ouest du Mexique"}
-            lg{"heure du Nord-Ouest du Mexique"}
-            ls{"heure normale du Nord-Ouest du Mexique"}
         }
         "meta:Mexico_Pacific"{
             ld{"heure d’été du Pacifique mexicain"}
@@ -1039,6 +934,11 @@ fr{
         }
         "meta:Truk"{
             ls{"heure de Chuuk"}
+        }
+        "meta:Turkey"{
+            ld{"heure avancée de Turquie"}
+            lg{"heure de Turquie"}
+            ls{"heure normale de Turquie"}
         }
         "meta:Turkmenistan"{
             ld{"heure d’été du Turkménistan"}

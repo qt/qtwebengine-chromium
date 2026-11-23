@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 kn{
     Currencies{
         AED{
@@ -197,7 +197,7 @@ kn{
         }
         GBP{
             "£",
-            "ಬ್ರಿಟೀಷ್ ಪೌಂಡ್",
+            "ಬ್ರಿಟಿಷ್ ಪೌಂಡ್",
         }
         GEL{
             "GEL",
@@ -635,6 +635,10 @@ kn{
             "EC$",
             "ಪೂರ್ವ ಕೆರೀಬಿಯನ್ ಡಾಲರ್",
         }
+        XCG{
+            "Cg.",
+            "ಕೆರೆಬಿಯನ್ ಗಿಲ್ಡರ್",
+        }
         XOF{
             "F CFA",
             "ಪಶ್ಚಿಮ ಆಫ್ರಿಕಾದ CFA ಫ್ರಾಂಕ್",
@@ -662,6 +666,10 @@ kn{
         ZMW{
             "ZMW",
             "ಜಾಂಬಿಯಾ ಕ್ವಾಚ",
+        }
+        ZWG{
+            "ZWG",
+            "ಜಿಂಬಾಬ್ವಿಯನ್ ಗೋಲ್ಡ್",
         }
     }
     Currencies%narrow{
@@ -848,7 +856,7 @@ kn{
         }
         GBP{
             one{"ಬ್ರಿಟಿಷ್ ಪೌಂಡ್"}
-            other{"ಬ್ರಿಟೀಷ್ ಪೌಂಡ್‍ಗಳು"}
+            other{"ಬ್ರಿಟಿಷ್ ಪೌಂಡ್‍ಗಳು"}
         }
         GEL{
             one{"ಜಾರ್ಜಿಯಾದ ಲಾರಿ"}
@@ -1124,7 +1132,7 @@ kn{
         }
         SEK{
             one{"ಸ್ವೀಡಿಷ್ ಕ್ರೋನಾ"}
-            other{"ಸ್ವೀಡಿಶ್ ಕ್ರೋನರ್"}
+            other{"ಸ್ವೀಡಿಷ್ ಕ್ರೋನರ್"}
         }
         SGD{
             one{"ಸಿಂಗಾಪುರ್ ಡಾಲರ್‌"}
@@ -1226,6 +1234,10 @@ kn{
             one{"ಪೂರ್ವ ಕೆರೀಬಿಯನ್ ಡಾಲರ್"}
             other{"ಪೂರ್ವ ಕೆರೀಬಿಯನ್ ಡಾಲರ್‌ಗಳು"}
         }
+        XCG{
+            one{"ಕೆರೆಬಿಯನ್ ಗಿಲ್ಡರ್"}
+            other{"ಕೆರೆಬಿಯನ್ ಗಿಲ್ಡರ್‌ಗಳು"}
+        }
         XOF{
             one{"ಪಶ್ಚಿಮ ಆಫ್ರಿಕಾದ CFA ಫ್ರಾಂಕ್"}
             other{"ಪಶ್ಚಿಮ ಆಫ್ರಿಕಾದ CFA ಫ್ರಾಂಕ್‌ಗಳು"}
@@ -1246,9 +1258,9 @@ kn{
             one{"ಜಾಂಬಿಯಾ ಕ್ವಾಚ"}
             other{"ಜಾಂಬಿಯಾ ಕ್ವಾಚಗಳು"}
         }
-    }
-    CurrencyUnitPatterns{
-        one{"{0} {1}"}
-        other{"{0} {1}"}
+        ZWG{
+            one{"ಜಿಂಬಾಬ್ವಿಯನ್ ಗೋಲ್ಡ್"}
+            other{"ಜಿಂಬಾಬ್ವಿಯನ್ ಗೋಲ್ಡ್"}
+        }
     }
 }

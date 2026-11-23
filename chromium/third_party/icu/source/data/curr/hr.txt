@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 hr{
     Currencies{
         ADP{
@@ -681,7 +681,7 @@ hr{
         }
         MRU{
             "MRU",
-            "mauritanijska ouguja",
+            "mauretanska ouguja",
         }
         MTL{
             "MTL",
@@ -1095,6 +1095,10 @@ hr{
             "XCD",
             "istočnokaripski dolar",
         }
+        XCG{
+            "Cg.",
+            "karipski gulden",
+        }
         XDR{
             "XDR",
             "posebna crtaća prava",
@@ -1198,6 +1202,10 @@ hr{
         ZWD{
             "ZWD",
             "zimbabveanski dolar (1980.–2008.)",
+        }
+        ZWG{
+            "ZWG",
+            "zimbabveansko zlato",
         }
         ZWL{
             "ZWL",
@@ -2060,9 +2068,9 @@ hr{
             other{"mauritanijskih ouguja (1973. – 2017.)"}
         }
         MRU{
-            few{"mauritanijske ouguje"}
-            one{"mauritanijska ouguja"}
-            other{"mauritanijskih ouguja"}
+            few{"mauretanske ouguje"}
+            one{"mauretanska ouguja"}
+            other{"mauretanskih ouguja"}
         }
         MTL{
             few{"malteške lire"}
@@ -2135,8 +2143,8 @@ hr{
             other{"namibijskih dolara"}
         }
         NGN{
-            few{"nigerijska naira"}
-            one{"nigerijski nair"}
+            few{"nigerijske naire"}
+            one{"nigerijska naira"}
             other{"nigerijskih naira"}
         }
         NIC{
@@ -2325,13 +2333,13 @@ hr{
             other{"slovačkih kruna"}
         }
         SLE{
-            few{"sijeraleonske leone"}
+            few{"sijarelonska leona"}
             one{"sijeraleonski leon"}
             other{"sijeraleonskih leona"}
         }
         SLL{
-            few{"sijeraleonske leone (1964—2022)"}
-            one{"sijeraleonski leon (1964—2022)"}
+            few{"sijeraleonskih leona (1964—2022)"}
+            one{"sijeraleonski leone (1964—2022)"}
             other{"sijeraleonskih leona (1964—2022)"}
         }
         SOS{
@@ -2579,6 +2587,11 @@ hr{
             one{"istočnokaripski dolar"}
             other{"istočnokaripskih dolara"}
         }
+        XCG{
+            few{"karipska guldena"}
+            one{"karipski gulden"}
+            other{"karipskih guldena"}
+        }
         XDR{
             few{"poseebna crtaća prava"}
             one{"posebno crtaće pravo"}
@@ -2709,6 +2722,11 @@ hr{
             one{"zimbabveanski dolar (1980.–2008.)"}
             other{"zimbabveanskih dolara (1980.–2008.)"}
         }
+        ZWG{
+            few{"zimbabveanska zlata"}
+            one{"zimbabveansko zlato"}
+            other{"zimbabveanskih zlata"}
+        }
         ZWL{
             few{"zimbabveanska dolara (2009)"}
             one{"zimbabveanski dolar (2009)"}
@@ -2719,10 +2737,5 @@ hr{
             one{"zimbabveanski dolar (2008)"}
             other{"zimbabveanskih dolara (2008)"}
         }
-    }
-    CurrencyUnitPatterns{
-        few{"{0} {1}"}
-        one{"{0} {1}"}
-        other{"{0} {1}"}
     }
 }

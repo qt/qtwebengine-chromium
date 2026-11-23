@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 fil{
     Keys{
         calendar{"Kalendaryo"}
@@ -14,10 +14,13 @@ fil{
         colStrength{"Lakas ng Pag-uuri-uri"}
         collation{"Pagkakasunud-sunod ng Ayos"}
         currency{"Pera"}
+        em{"Presentation ng Emoji"}
         hc{"Siklo ng Oras (12 laban sa 24)"}
-        lb{"Istilo ng Putol ng Linya"}
+        lb{"CJK na Line Break"}
+        lw{"Mga Line Break sa Mga Salita"}
         ms{"Sistema ng Pagsukat"}
         numbers{"Mga Numero"}
+        ss{"Sentence Break Pagkatapos ng Abbr."}
         timezone{"Time Zone"}
         va{"Lokal na Variant"}
         x{"Pribadong Paggamit"}
@@ -40,7 +43,7 @@ fil{
         ann{"Obolo"}
         anp{"Angika"}
         ar{"Arabic"}
-        ar_001{"Modernong Karaniwang Arabic"}
+        ar_001{"Modern Standard Arabic"}
         arn{"Mapuche"}
         arp{"Arapaho"}
         ars{"Najdi Arabic"}
@@ -53,6 +56,7 @@ fil{
         ay{"Aymara"}
         az{"Azerbaijani"}
         ba{"Bashkir"}
+        bal{"Baluchi"}
         ban{"Balinese"}
         bas{"Basaa"}
         be{"Belarusian"}
@@ -65,6 +69,7 @@ fil{
         bi{"Bislama"}
         bin{"Bini"}
         bla{"Siksika"}
+        blo{"Anii"}
         bm{"Bambara"}
         bn{"Bangla"}
         bo{"Tibetan"}
@@ -97,7 +102,7 @@ fil{
         crr{"Carolina Algonquian"}
         crs{"Seselwa Creole French"}
         cs{"Czech"}
-        csw{"Latian na Cree"}
+        csw{"Swampy Cree"}
         cu{"Church Slavic"}
         cv{"Chuvash"}
         cy{"Welsh"}
@@ -106,7 +111,6 @@ fil{
         dar{"Dargwa"}
         dav{"Taita"}
         de{"German"}
-        de_CH{"Swiss High German"}
         dgr{"Dogrib"}
         dje{"Zarma"}
         doi{"Dogri"}
@@ -140,11 +144,10 @@ fil{
         fo{"Faroese"}
         fon{"Fon"}
         fr{"French"}
-        fr_CH{"Swiss na French"}
         frc{"Cajun French"}
         frr{"Hilagang Frisian"}
         fur{"Friulian"}
-        fy{"Kanlurang Frisian"}
+        fy{"Western Frisian"}
         ga{"Irish"}
         gaa{"Ga"}
         gag{"Gagauz"}
@@ -234,7 +237,8 @@ fil{
         kv{"Komi"}
         kw{"Cornish"}
         kwk{"Kwakʼwala"}
-        ky{"Kirghiz"}
+        kxv{"Kuvi"}
+        ky{"Kyrgyz"}
         la{"Latin"}
         lad{"Ladino"}
         lag{"Langi"}
@@ -242,6 +246,7 @@ fil{
         lez{"Lezghian"}
         lg{"Ganda"}
         li{"Limburgish"}
+        lij{"Ligurian"}
         lil{"Lillooet"}
         lkt{"Lakota"}
         lmo{"Lombard"}
@@ -286,7 +291,7 @@ fil{
         ms{"Malay"}
         mt{"Maltese"}
         mua{"Mundang"}
-        mul{"Maramihang Wika"}
+        mul{"Maramihang wika"}
         mus{"Creek"}
         mwl{"Mirandese"}
         my{"Burmese"}
@@ -339,7 +344,6 @@ fil{
         prg{"Prussian"}
         ps{"Pashto"}
         pt{"Portuguese"}
-        pt_BR{"Portuges ng Brasil"}
         pt_PT{"European Portuguese"}
         qu{"Quechua"}
         quc{"Kʼicheʼ"}
@@ -358,7 +362,7 @@ fil{
         rwk{"Rwa"}
         sa{"Sanskrit"}
         sad{"Sandawe"}
-        sah{"Sakha"}
+        sah{"Yakut"}
         saq{"Samburu"}
         sat{"Santali"}
         sba{"Ngambay"}
@@ -401,6 +405,7 @@ fil{
         sw_CD{"Congo Swahili"}
         swb{"Comorian"}
         syr{"Syriac"}
+        szl{"Silesian"}
         ta{"Tamil"}
         tce{"Katimugang Tutchone"}
         te{"Telugu"}
@@ -435,14 +440,16 @@ fil{
         tzm{"Central Atlas Tamazight"}
         udm{"Udmurt"}
         ug{"Uyghur"}
-        uk{"Ukranian"}
+        uk{"Ukrainian"}
         umb{"Umbundu"}
         und{"Hindi Kilalang Wika"}
         ur{"Urdu"}
         uz{"Uzbek"}
         vai{"Vai"}
         ve{"Venda"}
+        vec{"Venetian"}
         vi{"Vietnamese"}
+        vmw{"Makhuwa"}
         vo{"Volapük"}
         vun{"Vunjo"}
         wa{"Walloon"}
@@ -454,6 +461,7 @@ fil{
         wuu{"Wu Chinese"}
         xal{"Kalmyk"}
         xh{"Xhosa"}
+        xnr{"Kangri"}
         xog{"Soga"}
         yav{"Yangben"}
         ybb{"Yemba"}
@@ -461,6 +469,7 @@ fil{
         yo{"Yoruba"}
         yrl{"Nheengatu"}
         yue{"Cantonese"}
+        za{"Zhuang"}
         zgh{"Standard Moroccan Tamazight"}
         zh{"Chinese"}
         zh_Hans{"Pinasimpleng Chinese"}
@@ -469,6 +478,12 @@ fil{
         zun{"Zuni"}
         zxx{"Walang nilalaman na ukol sa wika"}
         zza{"Zaza"}
+    }
+    Languages%core{
+        ku{"Kurdish"}
+    }
+    Languages%extension{
+        ku{"Kurmanji"}
     }
     Languages%long{
         zh_Hans{"Pinasimpleng Mandarin Chinese"}
@@ -516,7 +531,6 @@ fil{
         Hebr{"Hebrew"}
         Hira{"Hiragana"}
         Hrkt{"Japanese syllabaries"}
-        Jamo{"Jamo"}
         Jpan{"Japanese"}
         Kana{"Katakana"}
         Khmr{"Khmer"}
@@ -539,7 +553,6 @@ fil{
         Telu{"Telugu"}
         Tfng{"Tifinagh"}
         Thaa{"Thaana"}
-        Thai{"Thai"}
         Tibt{"Tibetan"}
         Vaii{"Vai"}
         Yiii{"Yi"}
@@ -568,17 +581,39 @@ fil{
             gregorian{"Gregorian na Kalendaryo"}
             hebrew{"Hebrew na Kalendaryo"}
             indian{"Pambansang Kalendaryong Indian"}
-            islamic{"Kalendaryong Islam"}
+            islamic{"Kalendaryong Hijiri"}
             islamic-civil{"Kalendaryong Hijri (tabular, Civil epoch)"}
+            islamic-rgsa{"Kalendaryong Islamiko (Saudi Arabia, sighting)"}
+            islamic-tbla{"Kalendaryong Islamiko (tabular, astronomikal na epoch)"}
             islamic-umalqura{"Kalendaryong Hijri (Umm al-Qura)"}
-            iso8601{"ISO-8601 na Kalendaryo"}
+            iso8601{"Kalendaryong Gregorian (Unang Taon)"}
             japanese{"Kalendaryong Japanese"}
             persian{"Kalendaryong Persian"}
             roc{"Kalendaryong Minguo"}
         }
+        calendar%core{
+            buddhist{"Buddhist"}
+            chinese{"Chinese"}
+            coptic{"Coptic"}
+            dangi{"Dangi"}
+            ethiopic{"Ethiopic"}
+            ethiopic-amete-alem{"Ethiopic Amete Alem"}
+            gregorian{"Gregorian"}
+            hebrew{"Hebrew"}
+            islamic{"Hijri"}
+            islamic-civil{"Hijri (tabular, civil epoch)"}
+            islamic-umalqura{"Hijri (Umm al-Qura)"}
+            japanese{"Japanese"}
+            persian{"Persian"}
+            roc{"Minguo"}
+        }
         cf{
             account{"Format ng Pera sa Accounting"}
             standard{"Karaniwang Format ng Pera"}
+        }
+        cf%core{
+            account{"Accounting"}
+            standard{"Karaniwan"}
         }
         colAlternate{
             non-ignorable{"Pag-uri-uriin ang Mga Simbolo"}
@@ -613,17 +648,14 @@ fil{
             tertiary{"Pag-uri-uriin ang Mga Accent/Case/Lapad"}
         }
         collation{
-            big5han{"Pagkakasunod-sunod ng Pag-uuri ng Tradisyunal na Chinese - Big5"}
             compat{"Nakaraang Pagkakasunud-sunod ng Pag-uuri, para sa compatibility"}
             dictionary{"Pagkakasunud-sunod ng Pag-uuri ng Diksyunaryo"}
             ducet{"Default na Pagkakasunud-sunod ng Ayos ng Unicode"}
             emoji{"Pagkakasunud-sunod ng Pag-uuri ng Emoji"}
             eor{"Mga Tuntunin ng European na Pagkakasunud-sunod"}
-            gb2312han{"Pagkakasunud-sunod ng Pag-uuri ng Pinasimpleng Chinese - GB2312"}
             phonebook{"Pagkakasunud-sunod ng Pag-uuri ng Phonebook"}
             phonetic{"Phonetic na Ayos ng Pag-uuri-uri"}
             pinyin{"Pagkakasunud-sunod ng Pag-uuri ng Pinyin"}
-            reformed{"Pagkakasunud-sunod ng Pag-uuri ng Na-reform"}
             search{"Pangkalahatang Paghahanap"}
             searchjl{"Maghanap Ayon sa Unang Katinig ng Hangul"}
             standard{"Karaniwang Pagkakasunud-sunod ng Ayos"}
@@ -632,10 +664,20 @@ fil{
             unihan{"Pagkakasunud-sunod ng Pag-uuri ng Radical-Stroke"}
             zhuyin{"Zhuyin na Pagkakasunud-sunod ng Pag-uuri"}
         }
+        collation%core{
+            ducet{"Default na Unicode"}
+            search{"Maghanap"}
+            standard{"Karaniwan"}
+        }
         d0{
             fwidth{"Hanggang sa Fullwidth"}
             hwidth{"Hanggang sa Halfwidth"}
             npinyin{"Numeric"}
+        }
+        em%core{
+            default{"Default"}
+            emoji{"Emoji"}
+            text{"Text"}
         }
         hc{
             h11{"12 Oras na Sistema (0–11)"}
@@ -643,10 +685,27 @@ fil{
             h23{"24 na Oras na Sistema (0–23)"}
             h24{"24 na Oras na Sistema (1–24)"}
         }
+        hc%core{
+            h11{"12 (0–11)"}
+            h12{"12 (1–12)"}
+            h23{"24 (0–23)"}
+            h24{"24 (1–24)"}
+        }
         lb{
             loose{"Loose na Istilo ng Line Break"}
             normal{"Normal na Istilo ng Line Break"}
             strict{"Mahigpit na Istilo ng Line Break"}
+        }
+        lb%core{
+            loose{"Loose"}
+            normal{"Normal"}
+            strict{"Strict"}
+        }
+        lw%core{
+            breakall{"I-break lahat"}
+            keepall{"Panatilihin lahat"}
+            normal{"Normal"}
+            phrase{"Panatilihin sa mga parirala"}
         }
         m0{
             bgn{"US BGN na Transliteration"}
@@ -656,6 +715,11 @@ fil{
             metric{"Metrikong Sistema"}
             uksystem{"Sistemang Imperial na Pagsukat"}
             ussystem{"Sistema ng Pagsukat sa US"}
+        }
+        ms%core{
+            metric{"Metric"}
+            uksystem{"UK"}
+            ussystem{"US"}
         }
         numbers{
             ahom{"Ahom na mga Digit"}
@@ -714,7 +778,7 @@ fil{
             native{"Mga Native na Digit"}
             nkoo{"N’Ko na Mga Digit"}
             olck{"Mga Digit ng Ol Chiki"}
-            orya{"Mga Oriya na Digit"}
+            orya{"Mga Odia na Digit"}
             roman{"Mga Roman Numeral"}
             romanlow{"Roman Lowercase na Mga Numeral"}
             taml{"Tamil na Mga Numeral"}
@@ -724,6 +788,10 @@ fil{
             tibt{"Mga Tibetan na Digit"}
             traditional{"Mga Tradisyunal na Numeral"}
             vaii{"Mga Vai na Digit"}
+        }
+        ss%core{
+            none{"Naka-off"}
+            standard{"Naka-on"}
         }
     }
     Variants{

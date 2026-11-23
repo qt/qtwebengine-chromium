@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 bs{
     Currencies{
         ADP{
@@ -889,11 +889,11 @@ bs{
         }
         SLE{
             "SLE",
-            "Sijeraleonski leone",
+            "sijeraleonski leone",
         }
         SLL{
             "SLL",
-            "Sijeraleonski leone (1964—2022)",
+            "sijeraleonski leone (1964—2022)",
         }
         SOS{
             "SOS",
@@ -1091,6 +1091,10 @@ bs{
             "XCD",
             "Istočnokaripski dolar",
         }
+        XCG{
+            "Cg.",
+            "karipski gulden",
+        }
         XDR{
             "XDR",
             "Posebna prava",
@@ -1186,6 +1190,10 @@ bs{
         ZWD{
             "ZWD",
             "Zimbabvejski dolar (1980–2008)",
+        }
+        ZWG{
+            "ZWG",
+            "zimbabveansko zlato",
         }
         ZWL{
             "ZWL",
@@ -2556,6 +2564,11 @@ bs{
             one{"istočnokaripski dolar"}
             other{"istočnokaripskih dolara"}
         }
+        XCG{
+            few{"karipska guldena"}
+            one{"karipski gulden"}
+            other{"karipskih guldena"}
+        }
         XDR{
             few{"posebna crtaća prava"}
             one{"posebno crtaće pravo"}
@@ -2676,6 +2689,11 @@ bs{
             one{"zimbabvejski dolar (1980–2008)"}
             other{"zimbabvejski dolari (1980–2008)"}
         }
+        ZWG{
+            few{"zimbabveanska zlata"}
+            one{"zimbabveansko zlato"}
+            other{"zimbabveanskih zlata"}
+        }
         ZWL{
             few{"zimbabvejska dolara (2009)"}
             one{"zimbabvejski dolaz (2009)"}
@@ -2686,10 +2704,5 @@ bs{
             one{"zimbabvejski dolaz (2008)"}
             other{"zimbabvejskih dolara (2008)"}
         }
-    }
-    CurrencyUnitPatterns{
-        few{"{0} {1}"}
-        one{"{0} {1}"}
-        other{"{0} {1}"}
     }
 }

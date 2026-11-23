@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 am{
     Currencies{
         AED{
@@ -124,7 +124,7 @@ am{
             "የቺሊ ፔሶ",
         }
         CNH{
-            "የቻይና ዩዋን",
+            "CNH",
             "የቻይና ዩዋን (የውጭ ምንዛሪ)",
         }
         CNY{
@@ -643,6 +643,10 @@ am{
             "EC$",
             "የምዕራብ ካሪብያን ዶላር",
         }
+        XCG{
+            "Cg.",
+            "የካሪቢያን ጊልደር",
+        }
         XOF{
             "F CFA",
             "የምዕራብ አፍሪካ ሴፋ ፍራንክ",
@@ -675,6 +679,10 @@ am{
             "ZWD",
             "የዚምቧቡዌ ዶላር",
         }
+        ZWG{
+            "ZWG",
+            "የዚምባብዌ ወርቅ",
+        }
     }
     Currencies%narrow{
         BYN{"р."}
@@ -685,9 +693,13 @@ am{
             one{"ቼክ ሪፐብሊክ ኮሩና"}
             other{"ቼክ ሪፐብሊክ ኮሮና"}
         }
-    }
-    CurrencyUnitPatterns{
-        one{"{0} {1}"}
-        other{"{0} {1}"}
+        XCG{
+            one{"የካሪቢያን ጊልደር"}
+            other{"የካሪቢያን ጊልደር"}
+        }
+        ZWG{
+            one{"የዚምባብዌ ወርቅ"}
+            other{"የዚምባብዌ ወርቅ"}
+        }
     }
 }

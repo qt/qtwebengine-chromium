@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 lv{
     zoneStrings{
         "Africa:Abidjan"{
@@ -222,6 +222,9 @@ lv{
         "America:Costa_Rica"{
             ec{"Kostarika"}
         }
+        "America:Coyhaique"{
+            ec{"Kojhaika"}
+        }
         "America:Creston"{
             ec{"Krestona"}
         }
@@ -399,9 +402,6 @@ lv{
         "America:New_York"{
             ec{"Ņujorka"}
         }
-        "America:Nipigon"{
-            ec{"Nipigona"}
-        }
         "America:Nome"{
             ec{"Noma"}
         }
@@ -419,9 +419,6 @@ lv{
         }
         "America:Ojinaga"{
             ec{"Ohinaga"}
-        }
-        "America:Pangnirtung"{
-            ec{"Pannirtuna"}
         }
         "America:Phoenix"{
             ec{"Fīniksa"}
@@ -441,9 +438,6 @@ lv{
         "America:Punta_Arenas"{
             ec{"Puntaarenasa"}
         }
-        "America:Rainy_River"{
-            ec{"Reinirivera"}
-        }
         "America:Rankin_Inlet"{
             ec{"Rankininleta"}
         }
@@ -458,9 +452,6 @@ lv{
         }
         "America:Rio_Branco"{
             ec{"Riobranko"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santaisabela"}
         }
         "America:Santarem"{
             ec{"Santarena"}
@@ -504,9 +495,6 @@ lv{
         "America:Thule"{
             ec{"Tule"}
         }
-        "America:Thunder_Bay"{
-            ec{"Tanderbeja"}
-        }
         "America:Tijuana"{
             ec{"Tihuana"}
         }
@@ -521,9 +509,6 @@ lv{
         }
         "America:Yakutat"{
             ec{"Jakutata"}
-        }
-        "America:Yellowknife"{
-            ec{"Jelounaifa"}
         }
         "Antarctica:Casey"{
             ec{"Keisi"}
@@ -611,9 +596,6 @@ lv{
         }
         "Asia:Chita"{
             ec{"Čita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Čoibalsana"}
         }
         "Asia:Colombo"{
             ec{"Kolombo"}
@@ -822,9 +804,6 @@ lv{
         "Australia:Broken_Hill"{
             ec{"Brokenhila"}
         }
-        "Australia:Currie"{
-            ec{"Kari"}
-        }
         "Australia:Darwin"{
             ec{"Dārvina"}
         }
@@ -986,9 +965,6 @@ lv{
         "Europe:Ulyanovsk"{
             ec{"Uļjanovska"}
         }
-        "Europe:Uzhgorod"{
-            ec{"Užhoroda"}
-        }
         "Europe:Vaduz"{
             ec{"Vaduca"}
         }
@@ -1009,9 +985,6 @@ lv{
         }
         "Europe:Zagreb"{
             ec{"Zagreba"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Zaporožje"}
         }
         "Europe:Zurich"{
             ec{"Cīrihe"}
@@ -1065,7 +1038,7 @@ lv{
             ec{"Lieldienu sala"}
         }
         "Pacific:Enderbury"{
-            ec{"Enderberija"}
+            ec{"Kantona"}
         }
         "Pacific:Fiji"{
             ec{"Fidži"}
@@ -1084,12 +1057,6 @@ lv{
         }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
-        }
-        "Pacific:Johnston"{
-            ec{"Džonstona atols"}
-        }
-        "Pacific:Kanton"{
-            ec{"Kantona"}
         }
         "Pacific:Kiritimati"{
             ec{"Kirisimasi"}
@@ -1158,9 +1125,7 @@ lv{
             ls{"Dienvidāfrikas ziemas laiks"}
         }
         "meta:Africa_Western"{
-            ld{"Rietumāfrikas vasaras laiks"}
-            lg{"Rietumāfrikas laiks"}
-            ls{"Rietumāfrikas ziemas laiks"}
+            ls{"Rietumāfrikas laiks"}
         }
         "meta:Alaska"{
             ld{"Aļaskas vasaras laiks"}
@@ -1299,11 +1264,6 @@ lv{
             lg{"Ķīnas laiks"}
             ls{"Ķīnas ziemas laiks"}
         }
-        "meta:Choibalsan"{
-            ld{"Čoibalsanas vasaras laiks"}
-            lg{"Čoibalsanas laiks"}
-            ls{"Čoibalsanas ziemas laiks"}
-        }
         "meta:Christmas"{
             ls{"Ziemsvētku salas laiks"}
         }
@@ -1418,6 +1378,9 @@ lv{
         "meta:Guyana"{
             ls{"Gajānas laiks"}
         }
+        "meta:Hawaii"{
+            ls{"Havaju–Aleutu ziemas laiks"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Havaju–Aleutu vasaras laiks"}
             lg{"Havaju–Aleutu laiks"}
@@ -1476,6 +1439,9 @@ lv{
             lg{"Petropavlovskas-Kamčatskas laiks"}
             ls{"Petropavlovskas-Kamčatskas ziemas laiks"}
         }
+        "meta:Kazakhstan"{
+            ls{"Kazahstānas laiks"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Austrumkazahstānas laiks"}
         }
@@ -1506,9 +1472,6 @@ lv{
             lg{"Lorda Hava salas laiks"}
             ls{"Lorda Hava salas ziemas laiks"}
         }
-        "meta:Macquarie"{
-            ls{"Makvorija salas laiks"}
-        }
         "meta:Magadan"{
             ld{"Magadanas vasaras laiks"}
             lg{"Magadanas laiks"}
@@ -1533,11 +1496,6 @@ lv{
         }
         "meta:Mawson"{
             ls{"Mosonas laiks"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Ziemeļrietumu Meksikas vasaras laiks"}
-            lg{"Ziemeļrietumu Meksikas laiks"}
-            ls{"Ziemeļrietumu Meksikas ziemas laiks"}
         }
         "meta:Mexico_Pacific"{
             ld{"Meksikas Klusā okeāna piekrastes vasaras laiks"}
@@ -1704,6 +1662,11 @@ lv{
         }
         "meta:Truk"{
             ls{"Čūkas laiks"}
+        }
+        "meta:Turkey"{
+            ld{"Turcijas vasaras laiks"}
+            lg{"Turcijas laiks"}
+            ls{"Turcijas ziemas laiks"}
         }
         "meta:Turkmenistan"{
             ld{"Turkmenistānas vasaras laiks"}

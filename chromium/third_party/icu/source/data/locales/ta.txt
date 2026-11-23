@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 ta{
     AuxExemplarCharacters{"[\u200C\u200D]"}
     ExemplarCharacters{
@@ -20,6 +20,8 @@ ta{
                 accountingFormat%alphaNextToNumber{"¤ #,##0.00;(¤ #,##0.00)"}
                 accountingFormat%noCurrency{"#,##0.00;(#,##0.00)"}
                 currencyFormat{"¤#,##,##0.00"}
+                currencyFormat%alphaNextToNumber{"¤ #,##,##0.00"}
+                currencyFormat%noCurrency{"#,##,##0.00"}
                 decimalFormat{"#,##,##0.###"}
                 percentFormat{"#,##,##0%"}
             }
@@ -78,6 +80,56 @@ ta{
             patternsShort{
                 currencyFormat{
                     1000{
+                        one{"¤0ஆ"}
+                        other{"¤0ஆ"}
+                    }
+                    10000{
+                        one{"¤00ஆ"}
+                        other{"¤00ஆ"}
+                    }
+                    100000{
+                        one{"¤000ஆ"}
+                        other{"¤000ஆ"}
+                    }
+                    1000000{
+                        one{"¤0மி"}
+                        other{"¤0மி"}
+                    }
+                    10000000{
+                        one{"¤00மி"}
+                        other{"¤00மி"}
+                    }
+                    100000000{
+                        one{"¤000மி"}
+                        other{"¤000மி"}
+                    }
+                    1000000000{
+                        one{"¤0பி"}
+                        other{"¤0பி"}
+                    }
+                    10000000000{
+                        one{"¤00பி"}
+                        other{"¤00பி"}
+                    }
+                    100000000000{
+                        one{"¤000பி"}
+                        other{"¤000பி"}
+                    }
+                    1000000000000{
+                        one{"¤0டி"}
+                        other{"¤0டி"}
+                    }
+                    10000000000000{
+                        one{"¤00டி"}
+                        other{"¤00டி"}
+                    }
+                    100000000000000{
+                        one{"¤000டி"}
+                        other{"¤000டி"}
+                    }
+                }
+                currencyFormat%alphaNextToNumber{
+                    1000{
                         one{"¤ 0ஆ"}
                         other{"¤ 0ஆ"}
                     }
@@ -103,7 +155,7 @@ ta{
                     }
                     1000000000{
                         one{"¤ 0பி"}
-                        other{"¤0பி"}
+                        other{"¤ 0பி"}
                     }
                     10000000000{
                         one{"¤ 00பி"}
@@ -111,7 +163,7 @@ ta{
                     }
                     100000000000{
                         one{"¤ 000பி"}
-                        other{"¤000பி"}
+                        other{"¤ 000பி"}
                     }
                     1000000000000{
                         one{"¤ 0டி"}
@@ -124,16 +176,6 @@ ta{
                     100000000000000{
                         one{"¤ 000டி"}
                         other{"¤ 000டி"}
-                    }
-                }
-                currencyFormat%alphaNextToNumber{
-                    1000000000{
-                        one{"¤ 0பி"}
-                        other{"¤ 0பி"}
-                    }
-                    100000000000{
-                        one{"¤ 000பி"}
-                        other{"¤ 000பி"}
                     }
                 }
                 decimalFormat{
@@ -207,7 +249,11 @@ ta{
         tamldec{
             patterns{
                 currencyFormat{"¤#,##0.00"}
-                currencyFormat%noCurrency{"#,##,##0.00"}
+                currencyFormat%alphaNextToNumber{"¤ #,##0.00"}
+                currencyFormat%noCurrency{"#,##0.00"}
+            }
+            rationalFormats{
+                rationalUsage{"never"}
             }
         }
         traditional{"taml"}
@@ -215,10 +261,10 @@ ta{
     calendar{
         chinese{
             DateTimePatterns{
-                "a h:mm:ss zzzz",
-                "a h:mm:ss z",
-                "a h:mm:ss",
-                "a h:mm",
+                "h:mm:ss a zzzz",
+                "h:mm:ss a z",
+                "h:mm:ss a",
+                "h:mm a",
                 "U MMMM d, EEEE",
                 "U, d MMMM",
                 "U, d MMM",
@@ -363,10 +409,10 @@ ta{
         }
         generic{
             DateTimePatterns{
-                "a h:mm:ss zzzz",
-                "a h:mm:ss z",
-                "a h:mm:ss",
-                "a h:mm",
+                "h:mm:ss a zzzz",
+                "h:mm:ss a z",
+                "h:mm:ss a",
+                "h:mm a",
                 "EEEE, d MMMM, y G",
                 "d MMMM, y G",
                 "d MMM, y G",
@@ -400,8 +446,6 @@ ta{
                 EBhm{"E B h:mm"}
                 EBhms{"E B h:mm:ss"}
                 Ed{"d E"}
-                Ehm{"E a h:mm"}
-                Ehms{"E a h:mm:ss"}
                 Gy{"y G"}
                 GyMMM{"MMM y G"}
                 GyMMMEd{"E, d MMM, y G"}
@@ -413,9 +457,6 @@ ta{
                 MMMd{"d MMM"}
                 MMdd{"dd-MM"}
                 Md{"d/M"}
-                h{"a h"}
-                hm{"a h:mm"}
-                hms{"a h:mm:ss"}
                 y{"y G"}
                 yyyy{"y G"}
                 yyyyM{"M/y G"}
@@ -457,22 +498,22 @@ ta{
                 }
                 fallback{"{0} – {1}"}
                 h{
-                    a{"a h – a h"}
-                    h{"a h–h"}
+                    a{"h a – h a"}
+                    h{"h–h a"}
                 }
                 hm{
-                    a{"a h:mm – a h:mm"}
-                    h{"a h:mm–h:mm"}
-                    m{"a h:mm–h:mm"}
+                    a{"h:mm a – h:mm a"}
+                    h{"h:mm–h:mm a"}
+                    m{"h:mm–h:mm a"}
                 }
                 hmv{
-                    a{"a h:mm – a h:mm v"}
-                    h{"a h:mm–h:mm v"}
-                    m{"a h:mm–h:mm v"}
+                    a{"h:mm – h:mm a v"}
+                    h{"h:mm–h:mm a v"}
+                    m{"h:mm–h:mm a v"}
                 }
                 hv{
-                    a{"a h – a h v"}
-                    h{"a h–h v"}
+                    a{"h a – h a v"}
+                    h{"h–h a v"}
                 }
                 y{
                     y{"y – y G"}
@@ -512,19 +553,11 @@ ta{
             }
         }
         gregorian{
-            AmPmMarkersAbbr{
-                "AM",
-                "PM",
-            }
-            AmPmMarkersNarrow{
-                "மு.ப",
-                "பி.ப",
-            }
             DateTimePatterns{
-                "a h:mm:ss zzzz",
-                "a h:mm:ss z",
-                "a h:mm:ss",
-                "a h:mm",
+                "h:mm:ss a zzzz",
+                "h:mm:ss a z",
+                "h:mm:ss a",
+                "h:mm a",
                 "EEEE, d MMMM, y",
                 "d MMMM, y",
                 "d MMM, y",
@@ -558,8 +591,6 @@ ta{
                 EBhm{"E B h:mm"}
                 EBhms{"E B h:mm:ss"}
                 Ed{"d E"}
-                Ehm{"E a h:mm"}
-                Ehms{"E a h:mm:ss"}
                 GyMd{"d/M/y G"}
                 MEd{"dd-MM, E"}
                 MMMMW{
@@ -569,11 +600,6 @@ ta{
                 MMMMd{"d MMMM"}
                 MMdd{"dd-MM"}
                 Md{"d/M"}
-                h{"a h"}
-                hm{"a h:mm"}
-                hms{"a h:mm:ss"}
-                hmsv{"a h:mm:ss v"}
-                hmv{"a h:mm v"}
                 yM{"M/y"}
                 yMEd{"E, d/M/y"}
                 yMM{"MM-y"}
@@ -650,21 +676,16 @@ ta{
                         evening1{"மா."}
                         evening2{"அந்தி மா."}
                         midnight{"நள்."}
-                        morning1{"அதி."}
+                        morning1{"காலை"}
                         morning2{"கா."}
                         night1{"இர."}
                         noon{"நண்."}
                     }
                 }
                 stand-alone{
-                    abbreviated{
-                        am{"முற்பகல்"}
-                        pm{"பிற்பகல்"}
-                    }
                     narrow{
                         afternoon1{"மதி."}
                         afternoon2{"பிற்."}
-                        am{"மு.ப"}
                         evening1{"மா."}
                         evening2{"அந்தி மா."}
                         midnight{"நள்."}
@@ -672,26 +693,21 @@ ta{
                         morning2{"கா."}
                         night1{"இ."}
                         noon{"நண்."}
-                        pm{"பி.ப"}
-                    }
-                    wide{
-                        am{"முற்பகல்"}
-                        pm{"பிற்பகல்"}
                     }
                 }
             }
             eras{
                 abbreviated{
-                    "கி.மு.",
-                    "கி.பி.",
+                    0{"கி.மு."}
+                    1{"கி.பி."}
                 }
                 abbreviated%variant{
-                    "பொ.ச.மு",
-                    "பொ.ச",
+                    0{"பொ.ச.மு"}
+                    1{"பொ.ச"}
                 }
                 wide{
-                    "கிறிஸ்துவுக்கு முன்",
-                    "அன்னோ டோமினி",
+                    0{"கிறிஸ்துவுக்கு முன்"}
+                    1{"அன்னோ டோமினி"}
                 }
             }
             intervalFormats{
@@ -732,23 +748,12 @@ ta{
                     d{"d/M – d/M"}
                 }
                 fallback{"{0} – {1}"}
-                h{
-                    a{"a h – a h"}
-                    h{"a h–h"}
-                }
-                hm{
-                    a{"a h:mm – a h:mm"}
-                    h{"a h:mm–h:mm"}
-                    m{"a h:mm–h:mm"}
-                }
                 hmv{
-                    a{"a h:mm – a h:mm v"}
-                    h{"a h:mm – h:mm v"}
-                    m{"a h:mm – h:mm v"}
+                    h{"h:mm – h:mm a v"}
+                    m{"h:mm – h:mm a v"}
                 }
                 hv{
-                    a{"a h – a h v"}
-                    h{"a h – h v"}
+                    h{"h – h a v"}
                 }
                 y{
                     y{"y – y"}
@@ -837,13 +842,13 @@ ta{
             quarters{
                 format{
                     abbreviated{
-                        "காலா.1",
-                        "காலா.2",
-                        "காலா.3",
-                        "காலா.4",
+                        "கா.1",
+                        "கா.2",
+                        "கா.3",
+                        "கா.4",
                     }
                     wide{
-                        "ஒன்றாம் காலாண்டு",
+                        "முதல் காலாண்டு",
                         "இரண்டாம் காலாண்டு",
                         "மூன்றாம் காலாண்டு",
                         "நான்காம் காலாண்டு",
@@ -892,7 +897,7 @@ ta{
         indian{
             eras{
                 abbreviated{
-                    "சாகா",
+                    0{"சாகா"}
                 }
             }
             monthNames{
@@ -999,12 +1004,10 @@ ta{
         roc{
             eras{
                 abbreviated{
-                    "ROCக்கு முன்",
-                    "R.O.C.",
+                    0{"ROCக்கு முன்"}
                 }
                 wide{
-                    "R.O.C. -க்கு முன்பு",
-                    "R.O.C.",
+                    0{"R.O.C. -க்கு முன்பு"}
                 }
             }
         }
@@ -1102,7 +1105,7 @@ ta{
             dn{"நாள்"}
             relative{
                 "-1"{"நேற்று"}
-                "-2"{"நேற்று முன் தினம்"}
+                "-2"{"நேற்று முன்தினம்"}
                 "0"{"இன்று"}
                 "1"{"நாளை"}
                 "2"{"நாளை மறுநாள்"}
@@ -1138,10 +1141,13 @@ ta{
             dn{"வருட. நாள்"}
         }
         dayperiod{
-            dn{"முற்பகல்/பிற்பகல்"}
+            dn{"AM/PM"}
+        }
+        dayperiod-narrow{
+            dn{"AM/PM"}
         }
         dayperiod-short{
-            dn{"முற்./பிற்."}
+            dn{"AM/PM"}
         }
         era{
             dn{"காலம்"}
@@ -1181,7 +1187,7 @@ ta{
             }
         }
         hour{
-            dn{"மணி"}
+            dn{"மணிநேரம்"}
             relative{
                 "0"{"இந்த ஒரு மணிநேரத்தில்"}
             }
@@ -1210,15 +1216,11 @@ ta{
             }
         }
         hour-short{
-            dn{"மணி."}
+            dn{"ம."}
             relativeTime{
-                future{
-                    one{"{0} மணி."}
-                    other{"{0} மணி."}
-                }
                 past{
-                    one{"{0} மணி. முன்"}
-                    other{"{0} மணி. முன்"}
+                    one{"{0} ம. முன்"}
+                    other{"{0} ம. முன்"}
                 }
             }
         }
@@ -1373,20 +1375,16 @@ ta{
             }
         }
         quarter-short{
-            dn{"காலா."}
+            dn{"கா."}
             relative{
                 "-1"{"இறுதி காலாண்டு"}
                 "0"{"இந்த காலாண்டு"}
                 "1"{"அடுத்த காலாண்டு"}
             }
             relativeTime{
-                future{
-                    one{"{0} காலா."}
-                    other{"{0} காலா."}
-                }
                 past{
-                    one{"{0} காலா. முன்"}
-                    other{"{0} காலா. முன்"}
+                    one{"{0} கா. முன்"}
+                    other{"{0} கா. முன்"}
                 }
             }
         }
@@ -1449,15 +1447,11 @@ ta{
             }
         }
         second-short{
-            dn{"விநா."}
+            dn{"வி."}
             relativeTime{
-                future{
-                    one{"{0} விநா."}
-                    other{"{0} விநா."}
-                }
                 past{
-                    one{"{0} விநா. முன்"}
-                    other{"{0} விநா. முன்"}
+                    one{"{0} வி. முன்"}
+                    other{"{0} வி. முன்"}
                 }
             }
         }
@@ -1764,19 +1758,6 @@ ta{
             lenient{
                 "[\\- ‑ . /]",
                 "[\\: ∶]",
-            }
-        }
-        general{
-            lenient{
-                "[.．․﹒ 。｡︒]",
-                "['＇’ ՚ ᾽᾿ ʼ]",
-                "[%％﹪ ٪]",
-                "[‰ ؉]",
-                "[\$＄﹩]",
-                "[£ ₤]",
-                "[¥￥]",
-                "[₩￦]",
-                "[₹ ₨ {Rp} {Rs}]",
             }
         }
         number{

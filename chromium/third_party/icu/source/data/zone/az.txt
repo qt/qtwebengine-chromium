@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 az{
     zoneStrings{
         "Africa:Abidjan"{
@@ -183,6 +183,9 @@ az{
         "America:Costa_Rica"{
             ec{"Kosta Rika"}
         }
+        "America:Coyhaique"{
+            ec{"Koyayke"}
+        }
         "America:Creston"{
             ec{"Kreston"}
         }
@@ -339,9 +342,6 @@ az{
         "America:New_York"{
             ec{"Nyu York"}
         }
-        "America:Nipigon"{
-            ec{"Nipiqon"}
-        }
         "America:Nome"{
             ec{"Nom"}
         }
@@ -360,9 +360,6 @@ az{
         "America:Ojinaga"{
             ec{"Ocinaqa"}
         }
-        "America:Pangnirtung"{
-            ec{"Panqnirtanq"}
-        }
         "America:Phoenix"{
             ec{"Feniks"}
         }
@@ -378,9 +375,6 @@ az{
         "America:Puerto_Rico"{
             ec{"Puerto Riko"}
         }
-        "America:Rainy_River"{
-            ec{"Reyni Çayı"}
-        }
         "America:Rankin_Inlet"{
             ec{"Rankin Girişi"}
         }
@@ -395,9 +389,6 @@ az{
         }
         "America:Rio_Branco"{
             ec{"Rio Branko"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santa İzabel"}
         }
         "America:Santiago"{
             ec{"Santyaqo"}
@@ -438,9 +429,6 @@ az{
         "America:Thule"{
             ec{"Tul"}
         }
-        "America:Thunder_Bay"{
-            ec{"İldırım Körfəzi"}
-        }
         "America:Tijuana"{
             ec{"Tixuana"}
         }
@@ -452,9 +440,6 @@ az{
         }
         "America:Winnipeg"{
             ec{"Vinnipeq"}
-        }
-        "America:Yellowknife"{
-            ec{"Yellounayf"}
         }
         "Antarctica:Casey"{
             ec{"Keysi"}
@@ -521,9 +506,6 @@ az{
         }
         "Asia:Chita"{
             ec{"Çita"}
-        }
-        "Asia:Choibalsan"{
-            ec{"Çoybalsan"}
         }
         "Asia:Colombo"{
             ec{"Kolombo"}
@@ -687,9 +669,6 @@ az{
         "Australia:Brisbane"{
             ec{"Brisbeyn"}
         }
-        "Australia:Currie"{
-            ec{"Kuriye"}
-        }
         "Australia:Darwin"{
             ec{"Darvin"}
         }
@@ -810,12 +789,6 @@ az{
         "Europe:Tallinn"{
             ec{"Tallin"}
         }
-        "Europe:Tirane"{
-            ec{"Tirana"}
-        }
-        "Europe:Uzhgorod"{
-            ec{"Ujqorod"}
-        }
         "Europe:Vaduz"{
             ec{"Vaduts"}
         }
@@ -836,9 +809,6 @@ az{
         }
         "Europe:Zagreb"{
             ec{"Zaqreb"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Zaporojye"}
         }
         "Europe:Zurich"{
             ec{"Sürix"}
@@ -880,7 +850,7 @@ az{
             ec{"Pasxa"}
         }
         "Pacific:Enderbury"{
-            ec{"Enderböri"}
+            ec{"Kanton"}
         }
         "Pacific:Fiji"{
             ec{"Fici"}
@@ -899,9 +869,6 @@ az{
         }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
-        }
-        "Pacific:Johnston"{
-            ec{"Conston"}
         }
         "Pacific:Kiritimati"{
             ec{"Kirimati"}
@@ -964,9 +931,7 @@ az{
             ls{"Cənubi Afrika Vaxtı"}
         }
         "meta:Africa_Western"{
-            ld{"Qərbi Afrika Yay Vaxtı"}
-            lg{"Qərbi Afrika Vaxtı"}
-            ls{"Qərbi Afrika Standart Vaxtı"}
+            ls{"Qərbi Afrika Vaxtı"}
         }
         "meta:Alaska"{
             ld{"Alyaska Yay Vaxtı"}
@@ -979,9 +944,9 @@ az{
             ls{"Amazon Standart Vaxtı"}
         }
         "meta:America_Central"{
-            ld{"Şimali Mərkəzi Amerika Yay Vaxtı"}
-            lg{"Şimali Mərkəzi Amerika Vaxtı"}
-            ls{"Şimali Mərkəzi Amerika Standart Vaxtı"}
+            ld{"Mərkəzi Amerika yay vaxtı"}
+            lg{"Mərkəzi Amerika saat qurşağı"}
+            ls{"Mərkəzi Amerika Standart Vaxtı"}
         }
         "meta:America_Eastern"{
             ld{"Şimali Şərqi Amerika Yay Vaxtı"}
@@ -1025,7 +990,7 @@ az{
         }
         "meta:Atlantic"{
             ld{"Atlantik Yay Vaxtı"}
-            lg{"Atlantik Vaxt"}
+            lg{"Atlantik saat qurşağı"}
             ls{"Atlantik Standart Vaxt"}
         }
         "meta:Australia_Central"{
@@ -1099,11 +1064,6 @@ az{
             ld{"Çin Yay Vaxtı"}
             lg{"Çin Vaxtı"}
             ls{"Çin Standart Vaxtı"}
-        }
-        "meta:Choibalsan"{
-            ld{"Çoybalsan Yay Vaxtı"}
-            lg{"Çoybalsan Vaxtı"}
-            ls{"Çoybalsan Standart Vaxtı"}
         }
         "meta:Christmas"{
             ls{"Milad Adası Vaxtı"}
@@ -1210,6 +1170,9 @@ az{
         "meta:Guyana"{
             ls{"Qayana Vaxtı"}
         }
+        "meta:Hawaii"{
+            ls{"Havay-Aleut Standart Vaxtı"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Havay-Aleut Yay Vaxtı"}
             lg{"Havay-Aleut Vaxtı"}
@@ -1263,6 +1226,9 @@ az{
             lg{"Yaponiya Vaxtı"}
             ls{"Yaponiya Standart Vaxtı"}
         }
+        "meta:Kazakhstan"{
+            ls{"Qazaxıstan vaxtı"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Şərqi Qazaxıstan Vaxtı"}
         }
@@ -1293,9 +1259,6 @@ az{
             lg{"Lord Hau Vaxtı"}
             ls{"Lord Hau Standart Vaxtı"}
         }
-        "meta:Macquarie"{
-            ls{"Makari Adası Vaxtı"}
-        }
         "meta:Magadan"{
             ld{"Maqadan Yay Vaxtı"}
             lg{"Maqadan Vaxtı"}
@@ -1320,11 +1283,6 @@ az{
         }
         "meta:Mawson"{
             ls{"Mouson Vaxtı"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Şimal-Qərbi Meksika Yay Vaxtı"}
-            lg{"Şimal-Qərbi Meksika Vaxtı"}
-            ls{"Şimal-Qərbi Meksika Standart Vaxtı"}
         }
         "meta:Mexico_Pacific"{
             ld{"Meksika Sakit Okean Yay Vaxtı"}
@@ -1491,6 +1449,11 @@ az{
         }
         "meta:Truk"{
             ls{"Çuuk Vaxtı"}
+        }
+        "meta:Turkey"{
+            ld{"Türkiya yay vaxtı"}
+            lg{"Türkiya vaxtı"}
+            ls{"Türkiya standart vaxtı"}
         }
         "meta:Turkmenistan"{
             ld{"Türkmənistan Yay Vaxtı"}

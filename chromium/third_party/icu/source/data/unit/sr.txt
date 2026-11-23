@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 sr{
     durationUnits{
         hm{"h.mm"}
@@ -176,6 +176,9 @@ sr{
                 gender{"inanimate"}
                 one{"{0} обртај"}
                 other{"{0} обртаја"}
+            }
+            steradian{
+                dnam{"стерадианси"}
             }
         }
         area{
@@ -365,7 +368,7 @@ sr{
                         instrumental{"квадратни {0}"}
                     }
                     feminine{
-                        _{"квадратни {0}"}
+                        _{"квадратна {0}"}
                         accusative{"квадратни {0}"}
                         genitive{"квадратни {0}"}
                         instrumental{"квадратни {0}"}
@@ -511,9 +514,33 @@ sr{
                 one{"{0} карат"}
                 other{"{0} карата"}
             }
+            katal{
+                dnam{"катали"}
+                few{"{0} катала"}
+                one{"{0} катал"}
+                other{"{0} катала"}
+            }
             milligram-ofglucose-per-deciliter{
+                case{
+                    accusative{
+                        few{"{0} милиграма по децилитру"}
+                        one{"{0} милиграм по децилитру"}
+                        other{"{0} милиграма по децилитру"}
+                    }
+                    genitive{
+                        few{"{0} милиграма по децилитру"}
+                        one{"{0} милиграма по децилитру"}
+                        other{"{0} милиграма по децилитру"}
+                    }
+                    instrumental{
+                        few{"{0} милиграма по децилитру"}
+                        one{"{0} милиграмом по децилитру"}
+                        other{"{0} милиграма по децилитру"}
+                    }
+                }
                 dnam{"милиграми по децилитру"}
                 few{"{0} милиграма по децилитру"}
+                gender{"inanimate"}
                 one{"{0} милиграм по децилитру"}
                 other{"{0} милиграма по децилитру"}
             }
@@ -565,6 +592,66 @@ sr{
                 one{"{0} мол"}
                 other{"{0} мола"}
             }
+            ofglucose{
+                dnam{"глукозе"}
+                few{"{0} глукозе"}
+                one{"{0} глукозе"}
+                other{"{0} глукозе"}
+            }
+            part{
+                dnam{"делови"}
+                few{"{0} дела"}
+                one{"{0} део"}
+                other{"{0} делова"}
+            }
+            part-per-1e6{
+                case{
+                    accusative{
+                        few{"{0} честице на милион"}
+                        one{"{0} честицу на милион"}
+                        other{"{0} честица на милион"}
+                    }
+                    genitive{
+                        few{"{0} честице на милион"}
+                        one{"{0} честице на милион"}
+                        other{"{0} честица на милион"}
+                    }
+                    instrumental{
+                        few{"{0} честице на милион"}
+                        one{"{0} честицом на милион"}
+                        other{"{0} честица на милион"}
+                    }
+                }
+                dnam{"честица на милион"}
+                few{"{0} честице на милион"}
+                gender{"feminine"}
+                one{"{0} честица на милион"}
+                other{"{0} честица на милион"}
+            }
+            part-per-1e9{
+                case{
+                    accusative{
+                        few{"{0} дела на милијарду"}
+                        one{"{0} део на милијарду"}
+                        other{"{0} делова на милијарду"}
+                    }
+                    genitive{
+                        few{"{0} дела на милијарду"}
+                        one{"{0} дела на милијарду"}
+                        other{"{0} делова на милијарду"}
+                    }
+                    instrumental{
+                        few{"{0} дела на милијарду"}
+                        one{"{0} делом на милијарду"}
+                        other{"{0} делова на милијарду"}
+                    }
+                }
+                dnam{"делови на милијарду"}
+                few{"{0} дела на милијарду"}
+                gender{"inanimate"}
+                one{"{0} део на милијарду"}
+                other{"{0} делова на милијарду"}
+            }
             percent{
                 case{
                     accusative{
@@ -610,30 +697,6 @@ sr{
                 gender{"inanimate"}
                 one{"{0} промил"}
                 other{"{0} промила"}
-            }
-            permillion{
-                case{
-                    accusative{
-                        few{"{0} честице на милион"}
-                        one{"{0} честицу на милион"}
-                        other{"{0} честица на милион"}
-                    }
-                    genitive{
-                        few{"{0} честице на милион"}
-                        one{"{0} честице на милион"}
-                        other{"{0} честица на милион"}
-                    }
-                    instrumental{
-                        few{"{0} честице на милион"}
-                        one{"{0} честицом на милион"}
-                        other{"{0} честица на милион"}
-                    }
-                }
-                dnam{"честица на милион"}
-                few{"{0} честице на милион"}
-                gender{"feminine"}
-                one{"{0} честица на милион"}
-                other{"{0} честица на милион"}
             }
             permyriad{
                 gender{"inanimate"}
@@ -702,7 +765,7 @@ sr{
             }
         }
         coordinate{
-            dnam{"главни правац"}
+            dnam{"страна света"}
         }
         digital{
             bit{
@@ -1033,7 +1096,7 @@ sr{
                         other{"{0} деценија"}
                     }
                     instrumental{
-                        few{"{0} деценије"}
+                        few{"{0} деценијом"}
                         one{"{0} деценијом"}
                         other{"{0} деценија"}
                     }
@@ -1189,6 +1252,29 @@ sr{
                 one{"{0} наносекунда"}
                 other{"{0} наносекунди"}
             }
+            night{
+                case{
+                    accusative{
+                        few{"{0} ноћи"}
+                        one{"{0} ноћ"}
+                        other{"{0} ноћи"}
+                    }
+                    genitive{
+                        few{"{0} ноћи"}
+                        one{"{0} ноћи"}
+                        other{"{0} ноћи"}
+                    }
+                    instrumental{
+                        few{"{0} ноћи"}
+                        one{"{0} ноћи"}
+                        other{"{0} ноћи"}
+                    }
+                }
+                few{"{0} ноћи"}
+                gender{"feminine"}
+                one{"{0} ноћ"}
+                other{"{0} ноћи"}
+            }
             quarter{
                 case{
                     accusative{
@@ -1314,6 +1400,24 @@ sr{
                 one{"{0} ампер"}
                 other{"{0} ампера"}
             }
+            coulomb{
+                dnam{"кулони"}
+                few{"{0} кулона"}
+                one{"{0} кулон"}
+                other{"{0} кулона"}
+            }
+            farad{
+                dnam{"фаради"}
+                few{"{0} фарада"}
+                one{"{0} фарад"}
+                other{"{0} фарада"}
+            }
+            henry{
+                dnam{"хенрији"}
+                few{"{0} хенрија"}
+                one{"{0} хенри"}
+                other{"{0} хенрија"}
+            }
             milliampere{
                 case{
                     accusative{
@@ -1362,6 +1466,12 @@ sr{
                 one{"{0} ом"}
                 other{"{0} ома"}
             }
+            siemens{
+                dnam{"сименси"}
+                few{"{0} сименса"}
+                one{"{0} сименс"}
+                other{"{0} сименса"}
+            }
             volt{
                 case{
                     accusative{
@@ -1388,6 +1498,12 @@ sr{
             }
         }
         energy{
+            becquerel{
+                dnam{"бекерели"}
+                few{"{0} бекерела"}
+                one{"{0} бекерел"}
+                other{"{0} бекерела"}
+            }
             british-thermal-unit{
                 dnam{"Британска термална јединица"}
             }
@@ -1415,6 +1531,12 @@ sr{
                 one{"{0} калорија"}
                 other{"{0} калорија"}
             }
+            calorie-it{
+                dnam{"калорије [IT]"}
+                few{"{0} калорије [IT]"}
+                one{"{0} калорија [IT]"}
+                other{"{0} калорија [IT]"}
+            }
             electronvolt{
                 dnam{"електронволти"}
                 few{"{0} електронволта"}
@@ -1426,6 +1548,12 @@ sr{
                 few{"{0} калорије"}
                 one{"{0} калорија"}
                 other{"{0} калорија"}
+            }
+            gray{
+                dnam{"греји"}
+                few{"{0} греја"}
+                one{"{0} греј"}
+                other{"{0} грејева"}
             }
             joule{
                 case{
@@ -1452,8 +1580,26 @@ sr{
                 other{"{0} џула"}
             }
             kilocalorie{
+                case{
+                    accusative{
+                        few{"{0} килокалорије"}
+                        one{"{0} килокалорију"}
+                        other{"{0} килокалорија"}
+                    }
+                    genitive{
+                        few{"{0} килокалорије"}
+                        one{"{0} килокалорије"}
+                        other{"{0} килокалорија"}
+                    }
+                    instrumental{
+                        few{"{0} килокалорије"}
+                        one{"{0} килокалоријом"}
+                        other{"{0} килокалорија"}
+                    }
+                }
                 dnam{"килокалорије"}
                 few{"{0} килокалорије"}
+                gender{"feminine"}
                 one{"{0} килокалорија"}
                 other{"{0} килокалорија"}
             }
@@ -1505,13 +1651,46 @@ sr{
                 one{"{0} киловат-сат"}
                 other{"{0} киловат-сати"}
             }
+            sievert{
+                dnam{"сиверти"}
+                few{"{0} сиверта"}
+                one{"{0} сиверт"}
+                other{"{0} сиверта"}
+            }
             therm-us{
                 dnam{"US therms"}
             }
         }
         force{
+            kilogram-force{
+                dnam{"килопонд"}
+                few{"{0} килопонда"}
+                one{"{0} килопонд"}
+                other{"{0} килопонда"}
+            }
             kilowatt-hour-per-100-kilometer{
+                case{
+                    accusative{
+                        few{"{0} киловат-сата на 100 километара"}
+                        one{"{0} киловат-сат на 100 километара"}
+                        other{"{0} киловат-сати на 100 километара"}
+                    }
+                    genitive{
+                        few{"{0} киловат-сата на 100 километара"}
+                        one{"{0} киловат-сата на 100 километара"}
+                        other{"{0} киловат-сати на 100 километара"}
+                    }
+                    instrumental{
+                        few{"{0} киловат-сата на 100 километара"}
+                        one{"{0} киловат-сатом на 100 километара"}
+                        other{"{0} киловат-сати на 100 километара"}
+                    }
+                }
+                dnam{"киловат-сати на 100 километара"}
+                few{"{0} киловат-сата на 100 километара"}
                 gender{"inanimate"}
+                one{"{0} киловат-сат на 100 километара"}
+                other{"{0} киловат-сати на 100 километара"}
             }
             newton{
                 case{
@@ -2007,6 +2186,29 @@ sr{
                 one{"{0} пикометар"}
                 other{"{0} пикометара"}
             }
+            point{
+                case{
+                    accusative{
+                        few{"{0} типографске тачке"}
+                        one{"{0} типографску тачку"}
+                        other{"{0} типографских тачака"}
+                    }
+                    genitive{
+                        few{"{0} типографских тачака"}
+                        one{"{0} типографске тачке"}
+                        other{"{0} типографских тачака"}
+                    }
+                    instrumental{
+                        few{"{0} типографске тачке"}
+                        one{"{0} типографском тачком"}
+                        other{"{0} типографских тачака"}
+                    }
+                }
+                few{"{0} типографске тачке"}
+                gender{"feminine"}
+                one{"{0} типографска тачка"}
+                other{"{0} типографских тачака"}
+            }
             solar-radius{
                 dnam{"сунчеви полупречници"}
                 few{"{0} сунчева полупречника"}
@@ -2091,6 +2293,20 @@ sr{
                 gender{"inanimate"}
                 one{"{0} лукс"}
                 other{"{0} лукса"}
+            }
+        }
+        magnetic{
+            tesla{
+                dnam{"тесле"}
+                few{"{0} тесле"}
+                one{"{0} тесла"}
+                other{"{0} тесла"}
+            }
+            weber{
+                dnam{"вебери"}
+                few{"{0} вебера"}
+                one{"{0} вебер"}
+                other{"{0} вебера"}
             }
         }
         mass{
@@ -2574,10 +2790,34 @@ sr{
                 other{"{0} милибара"}
             }
             millimeter-ofhg{
+                case{
+                    accusative{
+                        few{"{0} милиметра живиног стуба"}
+                        one{"{0} милиметар живиног стуба"}
+                        other{"{0} милиметара живиног стуба"}
+                    }
+                    genitive{
+                        few{"{0} милиметра живиног стуба"}
+                        one{"{0} милиметра живиног стуба"}
+                        other{"{0} милиметара живиног стуба"}
+                    }
+                    instrumental{
+                        few{"{0} милиметра живиног стуба"}
+                        one{"{0} милиметром живиног стуба"}
+                        other{"{0} милиметара живиног стуба"}
+                    }
+                }
                 dnam{"милиметри живиног стуба"}
                 few{"{0} милиметра живиног стуба"}
+                gender{"inanimate"}
                 one{"{0} милиметар живиног стуба"}
                 other{"{0} милиметара живиног стуба"}
+            }
+            ofhg{
+                dnam{"живе"}
+                few{"{0} живе"}
+                one{"{0} живе"}
+                other{"{0} живе"}
             }
             pascal{
                 case{
@@ -2613,7 +2853,7 @@ sr{
         speed{
             beaufort{
                 dnam{"Бофор"}
-                few{"Б {0}"}
+                few{"B {0}"}
                 one{"Бофор {0}"}
                 other{"Бофор {0}"}
             }
@@ -2646,6 +2886,29 @@ sr{
                 few{"{0} чвора"}
                 one{"{0} чвор"}
                 other{"{0} чворова"}
+            }
+            light-speed{
+                case{
+                    accusative{
+                        few{"{0} светла"}
+                        one{"{0} светло"}
+                        other{"{0} светала"}
+                    }
+                    genitive{
+                        few{"{0} светла"}
+                        one{"{0} светла"}
+                        other{"{0} светала"}
+                    }
+                    instrumental{
+                        few{"{0} светла"}
+                        one{"{0} светлом"}
+                        other{"{0} светала"}
+                    }
+                }
+                few{"{0} светла"}
+                gender{"neuter"}
+                one{"{0} светло"}
+                other{"{0} светала"}
             }
             meter-per-second{
                 case{
@@ -2987,6 +3250,12 @@ sr{
                 one{"{0} империјска унца течности"}
                 other{"{0} империјских унци течности"}
             }
+            fluid-ounce-metric{
+                dnam{"течне унце"}
+                few{"{0} течне унце"}
+                one{"{0} течна унца"}
+                other{"{0} течних унци"}
+            }
             gallon{
                 dnam{"галони"}
                 few{"{0} галона"}
@@ -3155,6 +3424,15 @@ sr{
     }
     unitsNarrow{
         concentr{
+            ofglucose{
+                dnam{"Glc"}
+            }
+            part{
+                dnam{"део"}
+                few{"{0} дела"}
+                one{"{0} део"}
+                other{"{0} делова"}
+            }
             percent{
                 dnam{"%"}
             }
@@ -3172,6 +3450,12 @@ sr{
                 one{"{0} mpg Imp"}
                 other{"{0} mpg Imp"}
             }
+        }
+        coordinate{
+            east{"{0}E"}
+            north{"{0}N"}
+            south{"{0}S"}
+            west{"{0}W"}
         }
         duration{
             day{
@@ -3222,6 +3506,9 @@ sr{
             }
         }
         energy{
+            calorie-it{
+                dnam{"cal [IT]"}
+            }
             electronvolt{
                 dnam{"eV"}
             }
@@ -3268,6 +3555,13 @@ sr{
                 few{"{0} кс"}
                 one{"{0} кс"}
                 other{"{0} кс"}
+            }
+        }
+        speed{
+            beaufort{
+                few{"B {0}"}
+                one{"B {0}"}
+                other{"B {0}"}
             }
         }
         volume{
@@ -3351,6 +3645,18 @@ sr{
                 one{"{0} ставка"}
                 other{"{0} ставки"}
             }
+            ofglucose{
+                dnam{"Glc"}
+            }
+            part{
+                dnam{"део"}
+                few{"{0} дела"}
+                one{"{0} део"}
+                other{"{0} делова"}
+            }
+            part-per-1e9{
+                dnam{"делови/милијарда"}
+            }
             percent{
                 dnam{"проценат"}
             }
@@ -3374,10 +3680,10 @@ sr{
         }
         coordinate{
             dnam{"правац"}
-            east{"{0}И"}
-            north{"{0}С"}
-            south{"{0}Ј"}
-            west{"{0}З"}
+            east{"{0} E"}
+            north{"{0} N"}
+            south{"{0} S"}
+            west{"{0} W"}
         }
         digital{
             bit{
@@ -3434,6 +3740,13 @@ sr{
                 other{"{0} мес."}
                 per{"{0}/м"}
             }
+            night{
+                dnam{"ноћ"}
+                few{"{0} ноћи"}
+                one{"{0} ноћ"}
+                other{"{0} ноћи"}
+                per{"{0}/ноћ"}
+            }
             quarter{
                 dnam{"кв"}
                 few{"{0} кв"}
@@ -3475,6 +3788,9 @@ sr{
             }
         }
         energy{
+            calorie-it{
+                dnam{"cal [IT]"}
+            }
             electronvolt{
                 dnam{"електронволт"}
             }
@@ -3555,6 +3871,9 @@ sr{
             picometer{
                 dnam{"пикометри"}
             }
+            point{
+                dnam{"типографске тачке"}
+            }
             yard{
                 dnam{"јарди"}
                 few{"{0} јрд"}
@@ -3581,9 +3900,15 @@ sr{
         speed{
             beaufort{
                 dnam{"Bf"}
-                few{"Б {0}"}
-                one{"Б {0}"}
-                other{"Б {0}"}
+                few{"B {0}"}
+                one{"B {0}"}
+                other{"B {0}"}
+            }
+            light-speed{
+                dnam{"светло"}
+                few{"{0} светла"}
+                one{"{0} светло"}
+                other{"{0} светала"}
             }
             meter-per-second{
                 dnam{"метри у секунди"}

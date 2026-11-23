@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 he{
     Currencies{
         ADP{
@@ -859,6 +859,10 @@ he{
             "EC$",
             "דולר מזרח קריבי",
         }
+        XCG{
+            "Cg.",
+            "גילדר של הקריביים",
+        }
         XDR{
             "XDR",
             "זכויות משיכה מיוחדות",
@@ -923,6 +927,10 @@ he{
             "ZWD",
             "דולר זימבבואי",
         }
+        ZWG{
+            "ZWG",
+            "זהב של זימבבואה",
+        }
     }
     Currencies%narrow{
         BYN{"р"}
@@ -986,19 +994,23 @@ he{
         }
         TRY{
             one{"לירה טורקית חדשה"}
-            other{"לירות טורקיות חדשות"}
-            two{"לירות טורקיות חדשות"}
+            other{"לירות טורקיות"}
+            two{"לירות טורקיות"}
+        }
+        XCG{
+            one{"גילדר של הקריביים"}
+            other{"גילדר של הקריביים"}
+            two{"גילדר של הקריביים"}
         }
         XXX{
             one{"(מטבע שאינו ידוע)"}
             other{"(מטבע שאינו ידוע)"}
             two{"(מטבע שאינו ידוע)"}
         }
-    }
-    CurrencyUnitPatterns{
-        many{"{0} {1}"}
-        one{"{0} {1}"}
-        other{"{0} {1}"}
-        two{"{0} {1}"}
+        ZWG{
+            one{"זהב של זימבבואה"}
+            other{"זהב של זימבבואה"}
+            two{"זהב של זימבבואה"}
+        }
     }
 }

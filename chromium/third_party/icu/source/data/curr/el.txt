@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 el{
     Currencies{
         ADP{
@@ -1012,6 +1012,10 @@ el{
             "EC$",
             "Δολάριο Ανατολικής Καραϊβικής",
         }
+        XCG{
+            "Cg.",
+            "γκίλντα Καραϊβικής",
+        }
         XDR{
             "XDR",
             "Ειδικά Δικαιώματα Ανάληψης",
@@ -1087,6 +1091,10 @@ el{
         ZWD{
             "ZWD",
             "Δολάριο Ζιμπάμπουε",
+        }
+        ZWG{
+            "ZWG",
+            "Χρυσός της Ζιμπάμπουε",
         }
         ZWL{
             "ZWL",
@@ -2093,6 +2101,10 @@ el{
             one{"δολάριο Ανατολικής Καραϊβικής"}
             other{"δολάρια Ανατολικής Καραϊβικής"}
         }
+        XCG{
+            one{"γκίλντα Καραϊβικής"}
+            other{"γκίλντες Καραϊβικής"}
+        }
         XDR{
             one{"ειδικό δικαίωμα ανάληψης"}
             other{"ειδικά δικαιώματα ανάληψης"}
@@ -2169,9 +2181,9 @@ el{
             one{"δολάριο Ζιμπάμπουε"}
             other{"δολάρια Ζιμπάμπουε"}
         }
-    }
-    CurrencyUnitPatterns{
-        one{"{0} {1}"}
-        other{"{0} {1}"}
+        ZWG{
+            one{"Χρυσός της Ζιμπάμπουε"}
+            other{"Χρυσός της Ζιμπάμπουε"}
+        }
     }
 }

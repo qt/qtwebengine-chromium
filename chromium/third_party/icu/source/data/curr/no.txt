@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 no{
     Currencies{
         ADP{
@@ -901,11 +901,11 @@ no{
         }
         SLE{
             "SLE",
-            "sierraleonske leone",
+            "sierraleonsk leone",
         }
         SLL{
             "SLL",
-            "sierraleonske leone (1964—2022)",
+            "sierraleonsk leone (1964–2022)",
         }
         SOS{
             "SOS",
@@ -1103,6 +1103,10 @@ no{
             "XCD",
             "østkaribiske dollar",
         }
+        XCG{
+            "Cg.",
+            "karibiske gylden",
+        }
         XDR{
             "XDR",
             "spesielle trekkrettigheter",
@@ -1206,6 +1210,10 @@ no{
         ZWD{
             "ZWD",
             "zimbabwiske dollar (1980–2008)",
+        }
+        ZWG{
+            "ZWG",
+            "zimbabwiske gull",
         }
         ZWL{
             "ZWL",
@@ -2096,11 +2104,11 @@ no{
         }
         SLE{
             one{"sierraleonsk leone"}
-            other{"sierraleonske leone"}
+            other{"sierraleonske leoner"}
         }
         SLL{
-            one{"sierraleonsk leone (1964—2022)"}
-            other{"sierraleonske leone (1964—2022)"}
+            one{"sierraleonsk leone (1964–2022)"}
+            other{"sierraleonske leoner (1964–2022)"}
         }
         SOS{
             one{"somalisk shilling"}
@@ -2294,6 +2302,10 @@ no{
             one{"østkaribisk dollar"}
             other{"østkaribiske dollar"}
         }
+        XCG{
+            one{"karibisk gylden"}
+            other{"karibiske gylden"}
+        }
         XDR{
             one{"spesiell trekkrettighet"}
             other{"spesielle trekkrettigheter"}
@@ -2386,6 +2398,10 @@ no{
             one{"zimbabwisk dollar (1980–2008)"}
             other{"zimbabwiske dollar (1980–2008)"}
         }
+        ZWG{
+            one{"zimbabwisk gull"}
+            other{"zimbabwiske gull"}
+        }
         ZWL{
             one{"zimbabwisk dollar (2009)"}
             other{"zimbabwiske dollar (2009)"}
@@ -2394,9 +2410,5 @@ no{
             one{"zimbabwisk dollar (2008)"}
             other{"zimbabwiske dollar (2008)"}
         }
-    }
-    CurrencyUnitPatterns{
-        one{"{0} {1}"}
-        other{"{0} {1}"}
     }
 }

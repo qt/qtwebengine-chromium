@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 th{
     units{
         acceleration{
@@ -15,6 +15,10 @@ th{
         angle{
             degree{
                 other{"{0} องศา"}
+            }
+            steradian{
+                dnam{"สเตอเรเดียน"}
+                other{"{0} สเตอเรเดียน"}
             }
         }
         area{
@@ -69,6 +73,10 @@ th{
             }
         }
         concentr{
+            katal{
+                dnam{"คาทัล"}
+                other{"{0} คาทัล"}
+            }
             milligram-ofglucose-per-deciliter{
                 dnam{"มิลลิกรัมต่อเดซิลิตร"}
                 other{"{0} มิลลิกรัมต่อเดซิลิตร"}
@@ -77,15 +85,27 @@ th{
                 dnam{"มิลลิโมลต่อลิตร"}
                 other{"{0} มิลลิโมลต่อลิตร"}
             }
+            ofglucose{
+                dnam{"กลูโคส"}
+                other{"{0} กลูโคส"}
+            }
+            part{
+                dnam{"ส่วน"}
+                other{"{0} ส่วน"}
+            }
+            part-per-1e6{
+                dnam{"ส่วนต่อล้าน"}
+                other{"{0} ส่วนต่อล้าน"}
+            }
+            part-per-1e9{
+                dnam{"ส่วนต่อพันล้าน"}
+                other{"{0} ส่วนต่อพันล้าน"}
+            }
             percent{
                 other{"{0} เปอร์เซ็นต์"}
             }
             permille{
                 other{"{0} เปอร์มิลล์"}
-            }
-            permillion{
-                dnam{"ส่วนต่อล้าน"}
-                other{"{0} ส่วนต่อล้าน"}
             }
             permyriad{
                 other{"{0} เปอร์มีเรียด"}
@@ -189,6 +209,18 @@ th{
                 dnam{"แอมแปร์"}
                 other{"{0} แอมแปร์"}
             }
+            coulomb{
+                dnam{"คูลอมบ์"}
+                other{"{0} คูลอมบ์"}
+            }
+            farad{
+                dnam{"ฟารัด"}
+                other{"{0} ฟารัด"}
+            }
+            henry{
+                dnam{"เฮนรี"}
+                other{"{0} เฮนรี"}
+            }
             milliampere{
                 dnam{"มิลลิแอมแปร์"}
                 other{"{0} มิลลิแอมแปร์"}
@@ -196,21 +228,41 @@ th{
             ohm{
                 other{"{0} โอห์ม"}
             }
+            siemens{
+                dnam{"ซีเมนส์"}
+                other{"{0} ซีเมนส์"}
+            }
             volt{
                 other{"{0} โวลต์"}
             }
         }
         energy{
+            becquerel{
+                dnam{"เบ็กเคอเรล"}
+                other{"{0} เบ็กเคอเรล"}
+            }
             british-thermal-unit{
                 dnam{"หน่วยความร้อนอังกฤษ"}
                 other{"{0} หน่วยความร้อนอังกฤษ"}
             }
+            calorie-it{
+                dnam{"แคลอรี [IT]"}
+                other{"{0} แคลอรี [IT]"}
+            }
             electronvolt{
                 other{"{0} อิเล็กตรอนโวลต์"}
+            }
+            gray{
+                dnam{"เกรย์"}
+                other{"{0} เกรย์"}
             }
             kilowatt-hour{
                 dnam{"กิโลวัตต์-ชั่วโมง"}
                 other{"{0} กิโลวัตต์-ชั่วโมง"}
+            }
+            sievert{
+                dnam{"ซีเวิร์ต"}
+                other{"{0} ซีเวิร์ต"}
             }
             therm-us{
                 dnam{"เธิร์มสหรัฐฯ"}
@@ -218,6 +270,10 @@ th{
             }
         }
         force{
+            kilogram-force{
+                dnam{"กิโลกรัมแรง"}
+                other{"{0} กิโลกรัมแรง"}
+            }
             kilowatt-hour-per-100-kilometer{
                 dnam{"กิโลวัตต์-ชั่วโมงต่อ 100 กิโลเมตร"}
                 other{"{0} กิโลวัตต์-ชั่วโมงต่อ 100 กิโลเมตร"}
@@ -339,6 +395,16 @@ th{
                 other{"{0} ความสว่างดวงอาทิตย์"}
             }
         }
+        magnetic{
+            tesla{
+                dnam{"เทสลา"}
+                other{"{0} เทสลา"}
+            }
+            weber{
+                dnam{"เวเบอร์"}
+                other{"{0} เวเบอร์"}
+            }
+        }
         mass{
             dalton{
                 other{"{0} ดัลตัน"}
@@ -392,6 +458,10 @@ th{
             millimeter-ofhg{
                 dnam{"มิลลิเมตรปรอท"}
                 other{"{0} มิลลิเมตรปรอท"}
+            }
+            ofhg{
+                dnam{"ปรอท"}
+                other{"{0} ปรอท"}
             }
             pascal{
                 dnam{"ปาสกาล"}
@@ -501,6 +571,10 @@ th{
                 dnam{"ฟลูอิดออนซ์ระบบอิมพีเรียล"}
                 other{"{0} ฟลูอิดออนซ์ระบบอิมพีเรียล"}
             }
+            fluid-ounce-metric{
+                dnam{"ฟลูอิดออนซ์เมตริก"}
+                other{"{0} ฟลูอิดออนซ์เมตริก"}
+            }
             gallon{
                 per{"{0} ต่อแกลลอน"}
             }
@@ -560,6 +634,9 @@ th{
             revolution{
                 other{"{0}รอบ"}
             }
+            steradian{
+                dnam{"สเตอเรเดียน"}
+            }
         }
         area{
             acre{
@@ -600,6 +677,10 @@ th{
             karat{
                 other{"{0}กะรัต"}
             }
+            katal{
+                dnam{"คาทัล"}
+                other{"{0} คาทัล"}
+            }
             milligram-ofglucose-per-deciliter{
                 other{"{0}มก./ดล."}
             }
@@ -610,12 +691,24 @@ th{
             mole{
                 other{"{0}โมล"}
             }
-            permille{
-                dnam{"‰"}
+            ofglucose{
+                dnam{"กลูโคส"}
+                other{"{0} กลูโคส"}
             }
-            permillion{
+            part{
+                dnam{"ส่วน"}
+                other{"{0} ส่วน"}
+            }
+            part-per-1e6{
                 dnam{"สตล."}
                 other{"{0}สตล."}
+            }
+            part-per-1e9{
+                dnam{"สตพล."}
+                other{"{0}สตพล."}
+            }
+            permille{
+                dnam{"‰"}
             }
             permyriad{
                 dnam{"‱"}
@@ -707,6 +800,9 @@ th{
                 dnam{"นาโนวิ"}
                 other{"{0}นาโนวิ"}
             }
+            night{
+                other{"{0}คืน"}
+            }
             quarter{
                 other{"{0}ไตรมาส"}
             }
@@ -725,22 +821,44 @@ th{
             ampere{
                 other{"{0}แอมป์"}
             }
+            coulomb{
+                dnam{"คูลอมบ์"}
+            }
+            farad{
+                dnam{"ฟารัด"}
+                other{"{0} ฟารัด"}
+            }
+            henry{
+                dnam{"เฮนรี"}
+                other{"{0} เฮนรี"}
+            }
             milliampere{
                 other{"{0}mA"}
             }
             ohm{
                 other{"{0}Ω"}
             }
+            siemens{
+                dnam{"ซีเมนส์"}
+                other{"{0} ซีเมนส์"}
+            }
             volt{
                 other{"{0}V"}
             }
         }
         energy{
+            becquerel{
+                dnam{"เบ็กเคอเรล"}
+            }
             british-thermal-unit{
                 other{"{0}BTU"}
             }
             calorie{
                 other{"{0}แคลอรี"}
+            }
+            calorie-it{
+                dnam{"แคลอรี-IT"}
+                other{"{0} แคลอรี-IT"}
             }
             electronvolt{
                 dnam{"eV"}
@@ -748,6 +866,10 @@ th{
             }
             foodcalorie{
                 other{"{0}แคลอรี"}
+            }
+            gray{
+                dnam{"เกรย์"}
+                other{"{0} เกรย์"}
             }
             joule{
                 other{"{0}จูล"}
@@ -761,11 +883,19 @@ th{
             kilowatt-hour{
                 other{"{0}kWh"}
             }
+            sievert{
+                dnam{"ซีเวิร์ต"}
+                other{"{0} ซีเวิร์ต"}
+            }
             therm-us{
                 other{"{0}เธิร์ม"}
             }
         }
         force{
+            kilogram-force{
+                dnam{"กิโลกรัมแรง"}
+                other{"{0} กิโลกรัมแรง"}
+            }
             kilowatt-hour-per-100-kilometer{
                 other{"{0}กิโลวัตต์-ชม./100กม."}
             }
@@ -904,6 +1034,15 @@ th{
                 other{"{0}L☉"}
             }
         }
+        magnetic{
+            tesla{
+                dnam{"เทสลา"}
+                other{"{0} เทสลา"}
+            }
+            weber{
+                dnam{"เวเบอร์"}
+            }
+        }
         mass{
             carat{
                 other{"{0}กะรัต"}
@@ -1000,6 +1139,10 @@ th{
             millimeter-ofhg{
                 other{"{0}มม. ปรอท"}
             }
+            ofhg{
+                dnam{"ปรอท"}
+                other{"{0} ปรอท"}
+            }
             pascal{
                 other{"{0}Pa"}
             }
@@ -1017,6 +1160,9 @@ th{
             }
             knot{
                 other{"{0}นอต"}
+            }
+            light-speed{
+                other{"{0}แสง"}
             }
             meter-per-second{
                 dnam{"ม./วิ"}
@@ -1186,6 +1332,10 @@ th{
                 dnam{"รอบ"}
                 other{"{0} รอบ"}
             }
+            steradian{
+                dnam{"สเตอเรเดียน"}
+                other{"{0} sr"}
+            }
         }
         area{
             acre{
@@ -1277,6 +1427,10 @@ th{
                 dnam{"กะรัต"}
                 other{"{0} กะรัต"}
             }
+            katal{
+                dnam{"คาทัล"}
+                other{"{0} คาทัล"}
+            }
             milligram-ofglucose-per-deciliter{
                 dnam{"มก./ดล."}
                 other{"{0} มก./ดล."}
@@ -1289,15 +1443,27 @@ th{
                 dnam{"โมล"}
                 other{"{0} โมล"}
             }
+            ofglucose{
+                dnam{"กลูโคส"}
+                other{"{0} กลูโคส"}
+            }
+            part{
+                dnam{"ส่วน"}
+                other{"{0} ส่วน"}
+            }
+            part-per-1e6{
+                dnam{"ส่วน/ล้าน"}
+                other{"{0} สตล."}
+            }
+            part-per-1e9{
+                dnam{"ส่วน/พันล้าน"}
+                other{"{0} สตพล."}
+            }
             percent{
                 dnam{"เปอร์เซ็นต์"}
             }
             permille{
                 dnam{"เปอร์มิลล์"}
-            }
-            permillion{
-                dnam{"ส่วน/ล้าน"}
-                other{"{0} สตล."}
             }
             permyriad{
                 dnam{"เปอร์มีเรียด"}
@@ -1379,6 +1545,11 @@ th{
                 dnam{"นาโนวินาที"}
                 other{"{0} นาโนวิ"}
             }
+            night{
+                dnam{"คืน"}
+                other{"{0} คืน"}
+                per{"{0}/คืน"}
+            }
             quarter{
                 dnam{"ไตรมาส"}
                 other{"{0} ไตรมาส"}
@@ -1405,6 +1576,18 @@ th{
                 dnam{"แอมป์"}
                 other{"{0} แอมป์"}
             }
+            coulomb{
+                dnam{"คูลอมบ์"}
+                other{"{0} C"}
+            }
+            farad{
+                dnam{"ฟารัด"}
+                other{"{0} ฟารัด"}
+            }
+            henry{
+                dnam{"เฮนรี"}
+                other{"{0} เฮนรี"}
+            }
             milliampere{
                 dnam{"มิลลิแอมป์"}
                 other{"{0} มิลลิแอมป์"}
@@ -1412,11 +1595,19 @@ th{
             ohm{
                 dnam{"โอห์ม"}
             }
+            siemens{
+                dnam{"ซีเมนส์"}
+                other{"{0} ซีเมนส์"}
+            }
             volt{
                 dnam{"โวลต์"}
             }
         }
         energy{
+            becquerel{
+                dnam{"เบ็กเคอเรล"}
+                other{"{0} Bq"}
+            }
             british-thermal-unit{
                 dnam{"บีทียู"}
                 other{"{0} BTU"}
@@ -1425,12 +1616,20 @@ th{
                 dnam{"แคลอรี"}
                 other{"{0} แคลอรี"}
             }
+            calorie-it{
+                dnam{"แคลอรี-IT"}
+                other{"{0} แคลอรี-IT"}
+            }
             electronvolt{
                 dnam{"อิเล็กตรอนโวลต์"}
             }
             foodcalorie{
                 dnam{"แคลอรี"}
                 other{"{0} แคลอรี"}
+            }
+            gray{
+                dnam{"เกรย์"}
+                other{"{0} เกรย์"}
             }
             joule{
                 dnam{"จูล"}
@@ -1448,12 +1647,20 @@ th{
                 dnam{"กว.-ชม."}
                 other{"{0} กว.-ชม."}
             }
+            sievert{
+                dnam{"ซีเวิร์ต"}
+                other{"{0} ซีเวิร์ต"}
+            }
             therm-us{
                 dnam{"เธิร์ม"}
                 other{"{0} เธิร์ม"}
             }
         }
         force{
+            kilogram-force{
+                dnam{"กิโลกรัมแรง"}
+                other{"{0} กิโลกรัมแรง"}
+            }
             kilowatt-hour-per-100-kilometer{
                 dnam{"กิโลวัตต์-ชม./100กม."}
                 other{"{0} กิโลวัตต์-ชม./100กม."}
@@ -1574,6 +1781,16 @@ th{
                 dnam{"ความสว่างดวงอาทิตย์"}
             }
         }
+        magnetic{
+            tesla{
+                dnam{"เทสลา"}
+                other{"{0} เทสลา"}
+            }
+            weber{
+                dnam{"เวเบอร์"}
+                other{"{0} Wb"}
+            }
+        }
         mass{
             carat{
                 dnam{"กะรัต"}
@@ -1687,6 +1904,10 @@ th{
                 dnam{"มม. ปรอท"}
                 other{"{0} มม. ปรอท"}
             }
+            ofhg{
+                dnam{"ปรอท"}
+                other{"{0} ปรอท"}
+            }
             pound-force-per-square-inch{
                 dnam{"ปอนด์/ตร.นิ้ว"}
                 other{"{0} ปอนด์/ตร.นิ้ว"}
@@ -1700,6 +1921,10 @@ th{
             knot{
                 dnam{"นอต"}
                 other{"{0} นอต"}
+            }
+            light-speed{
+                dnam{"แสง"}
+                other{"{0} แสง"}
             }
             meter-per-second{
                 dnam{"เมตรต่อวินาที"}
@@ -1793,6 +2018,9 @@ th{
             fluid-ounce{
                 dnam{"ฟลูอิดออนซ์"}
                 other{"{0} ฟลูอิดออนซ์"}
+            }
+            fluid-ounce-metric{
+                other{"{0} fl oz m."}
             }
             gallon{
                 dnam{"แกลลอน"}

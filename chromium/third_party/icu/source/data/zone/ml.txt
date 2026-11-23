@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 ml{
     zoneStrings{
         "Africa:Abidjan"{
@@ -270,6 +270,9 @@ ml{
         "America:Costa_Rica"{
             ec{"കോസ്റ്റ റിക്ക"}
         }
+        "America:Coyhaique"{
+            ec{"കൊയൈകേ"}
+        }
         "America:Creston"{
             ec{"ക്രെസ്റ്റൺ"}
         }
@@ -370,7 +373,7 @@ ml{
             ec{"വിനാമാക്, ഇൻഡ്യാന"}
         }
         "America:Indianapolis"{
-            ec{"ഇൻഡ്യാനാപോലീസ്"}
+            ec{"ഇൻഡ്യാനാപോളിസ്"}
         }
         "America:Inuvik"{
             ec{"ഇനുവിക്"}
@@ -465,9 +468,6 @@ ml{
         "America:New_York"{
             ec{"ന്യൂയോർക്ക്"}
         }
-        "America:Nipigon"{
-            ec{"നിപ്പിഗോൺ"}
-        }
         "America:Nome"{
             ec{"നോം"}
         }
@@ -488,9 +488,6 @@ ml{
         }
         "America:Panama"{
             ec{"പനാമ"}
-        }
-        "America:Pangnirtung"{
-            ec{"പാൻഗ്‌നിറ്റംഗ്"}
         }
         "America:Paramaribo"{
             ec{"പരാമാരിബോ"}
@@ -513,9 +510,6 @@ ml{
         "America:Punta_Arenas"{
             ec{"പുന്റ അരീനസ്"}
         }
-        "America:Rainy_River"{
-            ec{"റെയ്നി റിവർ"}
-        }
         "America:Rankin_Inlet"{
             ec{"റാങ്കിൻ ഇൻലെറ്റ്"}
         }
@@ -530,9 +524,6 @@ ml{
         }
         "America:Rio_Branco"{
             ec{"റിയോ ബ്രാങ്കോ"}
-        }
-        "America:Santa_Isabel"{
-            ec{"സാന്ത ഇസബേൽ"}
         }
         "America:Santarem"{
             ec{"സാന്ററെം"}
@@ -579,9 +570,6 @@ ml{
         "America:Thule"{
             ec{"തൂളി"}
         }
-        "America:Thunder_Bay"{
-            ec{"തണ്ടർ ബേ"}
-        }
         "America:Tijuana"{
             ec{"തിയുവാന"}
         }
@@ -602,9 +590,6 @@ ml{
         }
         "America:Yakutat"{
             ec{"യാകുറ്റാറ്റ്"}
-        }
-        "America:Yellowknife"{
-            ec{"യെല്ലോനൈഫ്"}
         }
         "Antarctica:Casey"{
             ec{"കാസെ"}
@@ -695,9 +680,6 @@ ml{
         }
         "Asia:Chita"{
             ec{"ചീറ്റ"}
-        }
-        "Asia:Choibalsan"{
-            ec{"ചൊയ്ബൽസൻ"}
         }
         "Asia:Colombo"{
             ec{"കൊളം‌ബോ"}
@@ -930,9 +912,6 @@ ml{
         "Australia:Broken_Hill"{
             ec{"ബ്രോക്കൺ ഹിൽ"}
         }
-        "Australia:Currie"{
-            ec{"ക്യൂറി"}
-        }
         "Australia:Darwin"{
             ec{"ഡാർവിൻ"}
         }
@@ -1115,9 +1094,6 @@ ml{
         "Europe:Ulyanovsk"{
             ec{"ഉല്ല്യാനോവ്‌സ്‌ക്"}
         }
-        "Europe:Uzhgorod"{
-            ec{"ഉസ്ഗൊറോഡ്"}
-        }
         "Europe:Vaduz"{
             ec{"വാദുസ്"}
         }
@@ -1138,9 +1114,6 @@ ml{
         }
         "Europe:Zagreb"{
             ec{"സാക്രെബ്"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"സാപ്പറോസൈ"}
         }
         "Europe:Zurich"{
             ec{"സൂറിച്ച്"}
@@ -1197,7 +1170,7 @@ ml{
             ec{"ഇഫാതെ"}
         }
         "Pacific:Enderbury"{
-            ec{"എൻഡബറി"}
+            ec{"കാന്റൺ ദ്വീപ്"}
         }
         "Pacific:Fakaofo"{
             ec{"ഫക്കാവോഫോ"}
@@ -1222,12 +1195,6 @@ ml{
         }
         "Pacific:Honolulu"{
             ec{"ഹോണലൂലു"}
-        }
-        "Pacific:Johnston"{
-            ec{"ജോൺസ്റ്റൺ"}
-        }
-        "Pacific:Kanton"{
-            ec{"കാൻട്ടൻ"}
         }
         "Pacific:Kiritimati"{
             ec{"കിരിറ്റിമാറ്റി"}
@@ -1316,9 +1283,7 @@ ml{
             ls{"ദക്ഷിണാഫ്രിക്ക സ്റ്റാൻഡേർഡ് സമയം"}
         }
         "meta:Africa_Western"{
-            ld{"പടിഞ്ഞാറൻ ആഫ്രിക്ക ഗ്രീഷ്‌മകാല സമയം"}
-            lg{"പടിഞ്ഞാറൻ ആഫ്രിക്ക സമയം"}
-            ls{"പടിഞ്ഞാറൻ ആഫ്രിക്ക സ്റ്റാൻഡേർഡ് സമയം"}
+            ls{"പടിഞ്ഞാറൻ ആഫ്രിക്ക സമയം"}
         }
         "meta:Alaska"{
             ld{"അലാസ്‌ക ഡേലൈറ്റ് സമയം"}
@@ -1336,24 +1301,24 @@ ml{
             ls{"ആമസോൺ സ്റ്റാൻഡേർഡ് സമയം"}
         }
         "meta:America_Central"{
-            ld{"വടക്കെ അമേരിക്കൻ സെൻട്രൽ ഡേലൈറ്റ് സമയം"}
-            lg{"വടക്കെ അമേരിക്കൻ സെൻട്രൽ സമയം"}
-            ls{"വടക്കെ അമേരിക്കൻ സെൻട്രൽ സ്റ്റാൻഡേർഡ് സമയം"}
+            ld{"സെൻട്രൽ ഡേലൈറ്റ് സമയം"}
+            lg{"സെൻട്രൽ സമയം"}
+            ls{"സെൻട്രൽ സ്റ്റാൻഡേർഡ് സമയം"}
         }
         "meta:America_Eastern"{
-            ld{"വടക്കെ അമേരിക്കൻ കിഴക്കൻ ഡേലൈറ്റ് സമയം"}
-            lg{"വടക്കെ അമേരിക്കൻ കിഴക്കൻ സമയം"}
-            ls{"വടക്കെ അമേരിക്കൻ കിഴക്കൻ സ്റ്റാൻഡേർഡ് സമയം"}
+            ld{"ഈസ്റ്റേൺ ഡേലൈറ്റ് സമയം"}
+            lg{"ഈസ്റ്റേൺ സമയം"}
+            ls{"ഈസ്റ്റേൺ സ്റ്റാൻഡേർഡ് സമയം"}
         }
         "meta:America_Mountain"{
-            ld{"വടക്കെ അമേരിക്കൻ മൗണ്ടൻ ഡേലൈറ്റ് സമയം"}
-            lg{"വടക്കെ അമേരിക്കൻ മൌണ്ടൻ സമയം"}
-            ls{"വടക്കെ അമേരിക്കൻ മൗണ്ടൻ സ്റ്റാൻഡേർഡ് സമയം"}
+            ld{"മൗണ്ടൻ ഡേലൈറ്റ് സമയം"}
+            lg{"മൗണ്ടൻ സമയം"}
+            ls{"മൗണ്ടൻ സ്റ്റാൻഡേർഡ് സമയം"}
         }
         "meta:America_Pacific"{
-            ld{"വടക്കെ അമേരിക്കൻ പസഫിക് ഡേലൈറ്റ് സമയം"}
+            ld{"പസഫിക് ഡേലൈറ്റ് സമയം"}
             lg{"വടക്കെ അമേരിക്കൻ പസഫിക് സമയം"}
-            ls{"വടക്കെ അമേരിക്കൻ പസഫിക് സ്റ്റാൻഡേർഡ് സമയം"}
+            ls{"പസഫിക് സ്റ്റാൻഡേർഡ് സമയം"}
         }
         "meta:Anadyr"{
             ld{"അനാഡിർ വേനൽക്കാല സമയം"}
@@ -1472,11 +1437,6 @@ ml{
             lg{"ചൈന സമയം"}
             ls{"ചൈന സ്റ്റാൻഡേർഡ് സമയം"}
         }
-        "meta:Choibalsan"{
-            ld{"ചോയിബൽസാൻ ഗ്രീഷ്‌മകാല സമയം"}
-            lg{"ചോയി‍ബൽസാൻ സമയം"}
-            ls{"ചോയ്‌ബൽസാൻ സ്റ്റാൻഡേർഡ് സമയം"}
-        }
         "meta:Christmas"{
             ls{"ക്രിസ്‌മസ് ദ്വീപ് സമയം"}
         }
@@ -1585,6 +1545,9 @@ ml{
         "meta:Guyana"{
             ls{"ഗയാന സമയം"}
         }
+        "meta:Hawaii"{
+            ls{"ഹവായ്-അലൂഷ്യൻ സ്റ്റാൻഡേർഡ് സമയം"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"ഹവായ്-അലൂഷ്യൻ ഡേലൈറ്റ് സമയം"}
             lg{"ഹവായ്-അലൂഷ്യൻ സമയം"}
@@ -1644,6 +1607,9 @@ ml{
             lg{"പെട്രോപാവ്‌ലോസ്ക് കംചാസ്കി സമയം"}
             ls{"പെട്രോപാവ്‌ലോസ്ക് കംചാസ്കി സ്റ്റാൻഡേർഡ് സമയം"}
         }
+        "meta:Kazakhstan"{
+            ls{"കസാഖിസ്ഥാൻ സമയം"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"കിഴക്കൻ കസാഖിസ്ഥാൻ സമയം"}
         }
@@ -1682,9 +1648,6 @@ ml{
             lg{"മകൌ സമയം"}
             ls{"മകൌ സ്റ്റാൻഡേർഡ് സമയം"}
         }
-        "meta:Macquarie"{
-            ls{"മക്വാറി ദ്വീപ് സമയം"}
-        }
         "meta:Magadan"{
             ld{"മഗാദൻ ഗ്രീഷ്‌മകാല സമയം"}
             lg{"മഗാദൻ സമയം"}
@@ -1709,11 +1672,6 @@ ml{
         }
         "meta:Mawson"{
             ls{"മാസൺ സമയം"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"വടക്കുപടിഞ്ഞാറൻ മെക്സിക്കൻ ഡേലൈറ്റ് സമയം"}
-            lg{"വടക്കുപടിഞ്ഞാറൻ മെക്സിക്കൻ സമയം"}
-            ls{"വടക്കുപടിഞ്ഞാറൻ മെക്‌സിക്കൻ സ്റ്റാൻഡേർഡ് സമയം"}
         }
         "meta:Mexico_Pacific"{
             ld{"മെക്സിക്കൻ പസഫിക് ഡേലൈറ്റ് സമയം"}
@@ -1889,6 +1847,11 @@ ml{
         "meta:Truk"{
             ls{"ചൂക്ക് സമയം"}
         }
+        "meta:Turkey"{
+            ld{"തുർക്കി വേനൽക്കാല സമയം"}
+            lg{"തുർക്കി സമയം"}
+            ls{"തുർക്കി സ്റ്റാൻഡേർഡ് സമയം"}
+        }
         "meta:Turkmenistan"{
             ld{"തുർക്ക്‌മെനിസ്ഥാൻ ഗ്രീഷ്‌മകാല സമയം"}
             lg{"തുർക്ക്‌മെനിസ്ഥാൻ സമയം"}
@@ -1947,7 +1910,8 @@ ml{
         "meta:Yukon"{
             ls{"യൂക്കോൺ സമയം"}
         }
-        gmtFormat{"ജിഎംടി {0}"}
+        gmtFormat{"ജിഎംടി{0}"}
+        gmtUnknownFormat{"ജിഎംടി+?"}
         gmtZeroFormat{"ജിഎംടി"}
         regionFormat{"{0} സമയം"}
         regionFormatDaylight{"{0} ഡേലൈറ്റ് സമയം"}

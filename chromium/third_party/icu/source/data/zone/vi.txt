@@ -1,22 +1,13 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 vi{
     zoneStrings{
-        "Africa:Sao_Tome"{
-            ec{"São Tomé"}
-        }
-        "America:Asuncion"{
-            ec{"Asunción"}
-        }
         "America:Bahia_Banderas"{
             ec{"Bahia Banderas"}
         }
         "America:Cancun"{
             ec{"Cancun"}
-        }
-        "America:Curacao"{
-            ec{"Curaçao"}
         }
         "America:Merida"{
             ec{"Merida"}
@@ -29,12 +20,6 @@ vi{
         }
         "America:North_Dakota:New_Salem"{
             ec{"New Salem, Bắc Dakota"}
-        }
-        "America:Santa_Isabel"{
-            ec{"Santa Isabel"}
-        }
-        "America:St_Barthelemy"{
-            ec{"St. Barthélemy"}
         }
         "Asia:Hong_Kong"{
             ec{"Hồng Kông"}
@@ -69,9 +54,6 @@ vi{
         "Atlantic:South_Georgia"{
             ec{"Nam Georgia"}
         }
-        "Australia:Currie"{
-            ec{"Currie"}
-        }
         "Etc:UTC"{
             ls{"Giờ Phối hợp Quốc tế"}
         }
@@ -96,20 +78,11 @@ vi{
         "Europe:Prague"{
             ec{"Praha"}
         }
-        "Europe:Uzhgorod"{
-            ec{"Uzhhorod"}
-        }
-        "Indian:Reunion"{
-            ec{"Réunion"}
-        }
         "Pacific:Enderbury"{
-            ec{"Enderbury"}
+            ec{"Đảo Canton"}
         }
         "Pacific:Honolulu"{
             ec{"Honolulu"}
-            sd{"HDT"}
-            sg{"Giờ HST"}
-            ss{"HST"}
         }
         "meta:Acre"{
             ld{"Giờ Mùa Hè Acre"}
@@ -129,9 +102,7 @@ vi{
             ls{"Giờ Chuẩn Nam Phi"}
         }
         "meta:Africa_Western"{
-            ld{"Giờ Mùa Hè Tây Phi"}
-            lg{"Giờ Tây Phi"}
-            ls{"Giờ Chuẩn Tây Phi"}
+            ls{"Giờ Tây Phi"}
         }
         "meta:Alaska"{
             ld{"Giờ Mùa Hè Alaska"}
@@ -306,11 +277,6 @@ vi{
             lg{"Giờ Trung Quốc"}
             ls{"Giờ Chuẩn Trung Quốc"}
         }
-        "meta:Choibalsan"{
-            ld{"Giờ Mùa Hè Choibalsan"}
-            lg{"Giờ Choibalsan"}
-            ls{"Giờ Chuẩn Choibalsan"}
-        }
         "meta:Christmas"{
             ls{"Giờ Đảo Christmas"}
         }
@@ -419,6 +385,10 @@ vi{
         "meta:Guyana"{
             ls{"Giờ Guyana"}
         }
+        "meta:Hawaii"{
+            ls{"Giờ Chuẩn Hawaii-Aleut"}
+            ss{"HAST"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Giờ Mùa Hè Hawaii-Aleut"}
             lg{"Giờ Hawaii-Aleut"}
@@ -480,6 +450,9 @@ vi{
             lg{"Giờ Petropavlovsk-Kamchatski"}
             ls{"Giờ chuẩn Petropavlovsk-Kamchatski"}
         }
+        "meta:Kazakhstan"{
+            ls{"Giờ Kazakhstan"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Giờ Miền Đông Kazakhstan"}
         }
@@ -518,9 +491,6 @@ vi{
             lg{"Giờ Ma Cao"}
             ls{"Giờ Chuẩn Ma Cao"}
         }
-        "meta:Macquarie"{
-            ls{"Giờ đảo Macquarie"}
-        }
         "meta:Magadan"{
             ld{"Giờ mùa hè Magadan"}
             lg{"Giờ Magadan"}
@@ -545,11 +515,6 @@ vi{
         }
         "meta:Mawson"{
             ls{"Giờ Mawson"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Giờ Mùa Hè Tây Bắc Mexico"}
-            lg{"Giờ Tây Bắc Mexico"}
-            ls{"Giờ Chuẩn Tây Bắc Mexico"}
         }
         "meta:Mexico_Pacific"{
             ld{"Giờ Mùa Hè Thái Bình Dương Mexico"}
@@ -724,6 +689,11 @@ vi{
         }
         "meta:Truk"{
             ls{"Giờ Chuuk"}
+        }
+        "meta:Turkey"{
+            ld{"Giờ Mùa Hè Thổ Nhĩ Kỳ"}
+            lg{"Giờ Thổ Nhĩ Kỳ"}
+            ls{"Giờ Chuẩn Thổ Nhĩ Kỳ"}
         }
         "meta:Turkmenistan"{
             ld{"Giờ Mùa Hè Turkmenistan"}

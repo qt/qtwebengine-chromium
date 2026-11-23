@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 qu{
     Currencies{
         AED{
@@ -501,11 +501,11 @@ qu{
         }
         SLE{
             "SLE",
-            "Leone de Sierra Leona",
+            "Leone qullqi de Sierra Leona",
         }
         SLL{
             "SLL",
-            "Leone de Sierra Leona (1964—2022)",
+            "Leone qullqi de Sierra Leona (1964–2022)",
         }
         SOS{
             "SOS",
@@ -611,6 +611,10 @@ qu{
             "EC$",
             "Dólar del Caribe Oriental",
         }
+        XCG{
+            "Cg.",
+            "Caribe guilderkuna",
+        }
         XOF{
             "F CFA",
             "Franco CFA de África Occidental",
@@ -634,6 +638,10 @@ qu{
         ZMW{
             "ZMW",
             "Kwacha Zambiano",
+        }
+        ZWG{
+            "ZWG",
+            "Zimbabuemanta quri",
         }
     }
     Currencies%narrow{
@@ -959,10 +967,10 @@ qu{
             other{"Libra de santa helena"}
         }
         SLE{
-            other{"Leone de sierra leona"}
+            other{"Leone qullqi de Sierra Leona"}
         }
         SLL{
-            other{"Leone de sierra leona (1964—2022)"}
+            other{"Leones qullqi de Sierra Leona (1964–2022)"}
         }
         SOS{
             other{"Chelín somalí"}
@@ -1033,6 +1041,9 @@ qu{
         XCD{
             other{"Dólar del caribe oriental"}
         }
+        XCG{
+            other{"Caribe guilderkuna"}
+        }
         XOF{
             other{"Franco CFA de áfrica occidental"}
         }
@@ -1048,8 +1059,8 @@ qu{
         ZMW{
             other{"Kwacha zambiano"}
         }
-    }
-    CurrencyUnitPatterns{
-        other{"{0} {1}"}
+        ZWG{
+            other{"Zimbabuemanta quri"}
+        }
     }
 }

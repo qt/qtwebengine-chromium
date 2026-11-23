@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 so{
     zoneStrings{
         "Africa:Abidjan"{
@@ -408,9 +408,6 @@ so{
         "America:New_York"{
             ec{"Niyuu Yook"}
         }
-        "America:Nipigon"{
-            ec{"Nibiigoon"}
-        }
         "America:Nome"{
             ec{"Noom"}
         }
@@ -429,9 +426,6 @@ so{
         "America:Panama"{
             ec{"Banaama"}
         }
-        "America:Pangnirtung"{
-            ec{"Bangnirtuung"}
-        }
         "America:Phoenix"{
             ec{"Foonikis"}
         }
@@ -446,9 +440,6 @@ so{
         }
         "America:Punta_Arenas"{
             ec{"Bunta Arinaas"}
-        }
-        "America:Rainy_River"{
-            ec{"Reyni Rifer"}
         }
         "America:Rankin_Inlet"{
             ec{"Raankin Inleet"}
@@ -510,9 +501,6 @@ so{
         "America:Thule"{
             ec{"Tuul"}
         }
-        "America:Thunder_Bay"{
-            ec{"Tanda Baay"}
-        }
         "America:Tijuana"{
             ec{"Tijuwaana"}
         }
@@ -530,9 +518,6 @@ so{
         }
         "America:Yakutat"{
             ec{"Yakutaat"}
-        }
-        "America:Yellowknife"{
-            ec{"Yelowneyf"}
         }
         "Antarctica:Casey"{
             ec{"Kaysee"}
@@ -609,9 +594,6 @@ so{
         "Asia:Chita"{
             ec{"Jiita"}
         }
-        "Asia:Choibalsan"{
-            ec{"Joybalsan"}
-        }
         "Asia:Colombo"{
             ec{"Kolombo"}
         }
@@ -626,12 +608,6 @@ so{
         }
         "Asia:Gaza"{
             ec{"Qasa"}
-        }
-        "Asia:Hong_Kong"{
-            ec{"Hoong Koong"}
-        }
-        "Asia:Hovd"{
-            ec{"Hofud"}
         }
         "Asia:Irkutsk"{
             ec{"Irkutsik"}
@@ -672,9 +648,6 @@ so{
         "Asia:Kuwait"{
             ec{"Kuweyt"}
         }
-        "Asia:Macau"{
-            ec{"Makow"}
-        }
         "Asia:Magadan"{
             ec{"Magedan"}
         }
@@ -702,9 +675,6 @@ so{
         "Asia:Pontianak"{
             ec{"Botiyaanak"}
         }
-        "Asia:Pyongyang"{
-            ec{"Boyongyang"}
-        }
         "Asia:Qatar"{
             ec{"Qaddar"}
         }
@@ -723,20 +693,11 @@ so{
         "Asia:Samarkand"{
             ec{"Samarkaan"}
         }
-        "Asia:Seoul"{
-            ec{"Soul"}
-        }
-        "Asia:Shanghai"{
-            ec{"Shanghaay"}
-        }
         "Asia:Singapore"{
             ec{"Singabuur"}
         }
         "Asia:Srednekolymsk"{
             ec{"Sarednokoleymisk"}
-        }
-        "Asia:Taipei"{
-            ec{"Teybey"}
         }
         "Asia:Tashkent"{
             ec{"Toshkeent"}
@@ -800,9 +761,6 @@ so{
         }
         "Australia:Broken_Hill"{
             ec{"Boroken Hil"}
-        }
-        "Australia:Currie"{
-            ec{"Kuriy"}
         }
         "Australia:Eucla"{
             ec{"Yukla"}
@@ -963,9 +921,6 @@ so{
         "Europe:Ulyanovsk"{
             ec{"Ulyanofisk"}
         }
-        "Europe:Uzhgorod"{
-            ec{"Usgorod"}
-        }
         "Europe:Vaduz"{
             ec{"Faduus"}
         }
@@ -983,9 +938,6 @@ so{
         }
         "Europe:Zagreb"{
             ec{"Saqrib"}
-        }
-        "Europe:Zaporozhye"{
-            ec{"Saborosey"}
         }
         "Europe:Zurich"{
             ec{"Suurikh"}
@@ -1036,7 +988,7 @@ so{
             ec{"Iistar"}
         }
         "Pacific:Enderbury"{
-            ec{"Enderburi"}
+            ec{"Kantoon"}
         }
         "Pacific:Fakaofo"{
             ec{"fakofo"}
@@ -1052,12 +1004,6 @@ so{
         }
         "Pacific:Guam"{
             ec{"Guwam"}
-        }
-        "Pacific:Johnston"{
-            ec{"Joonston"}
-        }
-        "Pacific:Kanton"{
-            ec{"Kantoon"}
         }
         "Pacific:Kiritimati"{
             ec{"Kiritimaati"}
@@ -1131,9 +1077,7 @@ so{
             ls{"Waqtiyada Caadiga Ah ee Koonfur Afrika"}
         }
         "meta:Africa_Western"{
-            ld{"Waqtiga Xagaaga ee Galbeedka Afrika"}
-            lg{"Waqtiga Galbeedka Afrika"}
-            ls{"Waqtiga Caadiga Ah ee Galbeedka Afrika"}
+            ls{"Waqtiga Galbeedka Afrika"}
         }
         "meta:Alaska"{
             ld{"Waqtiga Dharaarta ee Alaska"}
@@ -1176,9 +1120,9 @@ so{
             ls{"Wakhtiga Caadiga ah ee Anadyr"}
         }
         "meta:Apia"{
-            ld{"Waqtiga Dharaarta ee Abiya"}
-            lg{"Waqtiga Abiya"}
-            ls{"Waqtiga Caadiga Ah ee Abiya"}
+            ld{"Waqtiga Dharaarta ee Samoa"}
+            lg{"Wakhtiga Samoa"}
+            ls{"Waqtiga Caadiga Ah ee Samoa"}
         }
         "meta:Aqtau"{
             ld{"Saacada Waqtiga Kulaylaha Aqtau"}
@@ -1262,7 +1206,7 @@ so{
             ls{"Waqtiga Caadiga ah ee Baraasiliya"}
         }
         "meta:Brunei"{
-            ls{"Waqtiga Buruney Daarusalaam"}
+            ls{"Wakhtiga Brunei"}
         }
         "meta:Cape_Verde"{
             ld{"Waqtiga Xagaaga ee Keyb Faarde"}
@@ -1270,7 +1214,7 @@ so{
             ls{"Waqtiga Caadiga Ah ee Keyb Faarde"}
         }
         "meta:Chamorro"{
-            ls{"Waqtiga Jamoro"}
+            ls{"Wakhtiga Caadiga ah ee Chamorro"}
         }
         "meta:Chatham"{
             ld{"Waqtiga Dharaarta ee Jaatam"}
@@ -1287,11 +1231,6 @@ so{
             lg{"Waqtiga Shiinaha"}
             ls{"Waqtiga Caadiga Ah ee Shiinaha"}
         }
-        "meta:Choibalsan"{
-            ld{"Waqtiga Xagaaga ee Joybalsan"}
-            lg{"Waqtiga Joybalsan"}
-            ls{"Waqtiga Caadiga Ah ee Joybalsan"}
-        }
         "meta:Christmas"{
             ls{"Waqtiga Kirismas Aylaan"}
         }
@@ -1304,9 +1243,9 @@ so{
             ls{"Waqtiga Caadiga Ah ee Kolambiya"}
         }
         "meta:Cook"{
-            ld{"Waqtiga Nus Xagaaga ah ee Kuuk Aylaanis"}
-            lg{"Waqtiga Kuuk Aylaanis"}
-            ls{"Waqtiga Caadiga Ah ee Kuuk Aylaanis"}
+            ld{"Waqtiga Caadiga Ah ee Jasiiradaha Cook"}
+            lg{"Wakhtiga Jasiiradaha Cook"}
+            ls{"Waqtiga Caadiga Ah ee Jasiiradaha Cook"}
         }
         "meta:Cuba"{
             ld{"Waqtiga Dharaarta ee Kuuba"}
@@ -1314,13 +1253,13 @@ so{
             ls{"Waqtiga Caadiga Ah ee Kuuba"}
         }
         "meta:Davis"{
-            ls{"Waqtiga Dafis"}
+            ls{"Wakhtiga Davis"}
         }
         "meta:DumontDUrville"{
             ls{"Waqtiga Dumont - d’urfille"}
         }
         "meta:East_Timor"{
-            ls{"Waqtiga Iist Timoor"}
+            ls{"Wakhtiga Timor-Leste"}
         }
         "meta:Easter"{
             ld{"Waqtiga Xagaaga ee Iistar Aylaan"}
@@ -1397,6 +1336,10 @@ so{
         "meta:Guyana"{
             ls{"Waqtiga Guyaana"}
         }
+        "meta:Hawaii"{
+            ls{"Waqtiga Caadiga Ah ee Hawaay-Alutiyaan"}
+            ss{"HAST"}
+        }
         "meta:Hawaii_Aleutian"{
             ld{"Waqtiga Dharaarta ee Hawaay-Alutiyaan"}
             lg{"Waqtiga Hawaay-Alutiyaan"}
@@ -1422,7 +1365,7 @@ so{
             ls{"Waqtiga Badweynta Hindiya"}
         }
         "meta:Indochina"{
-            ls{"Waqtiga Indoshiina"}
+            ls{"Wakhtiga Indochina"}
         }
         "meta:Indonesia_Central"{
             ls{"Waqtiga Bartamaha Indoneeysiya"}
@@ -1458,6 +1401,9 @@ so{
             lg{"Wakhtiga Petropavlovsk-Kamchatski"}
             ls{"Wakhtiga Caadiga ah ee Petropavlovsk-Kamchatski"}
         }
+        "meta:Kazakhstan"{
+            ls{"Wakhtiga Kazakhistan"}
+        }
         "meta:Kazakhstan_Eastern"{
             ls{"Waqtiga Bariga Kasakhistaan"}
         }
@@ -1488,9 +1434,6 @@ so{
             lg{"Waqtiga Lod How"}
             ls{"Waqtiga Caadiga Ah ee Lod How"}
         }
-        "meta:Macquarie"{
-            ls{"Waqtiga Makquwariy Aylaan"}
-        }
         "meta:Magadan"{
             ld{"Waqtiga Xagaaga ee Magedan"}
             lg{"Watiga Magedan"}
@@ -1515,11 +1458,6 @@ so{
         }
         "meta:Mawson"{
             ls{"Waqtiga Mawson"}
-        }
-        "meta:Mexico_Northwest"{
-            ld{"Waqtiga Dharaarta ee Waqooyi-Galbeed Meksiko"}
-            lg{"Waqtiga Waqooyi-Galbeed Meksiko"}
-            ls{"Waqtiga Caadiga Ah ee Waqooyi-Galbeed Meksiko"}
         }
         "meta:Mexico_Pacific"{
             ld{"Waqtiga Dharaarta ee Baasifikada Meksiko"}
@@ -1621,7 +1559,7 @@ so{
             ls{"Waqtiga Bitkeen"}
         }
         "meta:Ponape"{
-            ls{"Waqtiga Bonabe"}
+            ls{"Wakhtiga Pohnpei"}
         }
         "meta:Pyongyang"{
             ls{"Waqtiga Boyongyang"}
@@ -1648,9 +1586,9 @@ so{
             ls{"Wakhtiga Caadiga ah ee Samara"}
         }
         "meta:Samoa"{
-            ld{"Waqtiga Dharaarta ee Samoa"}
-            lg{"Waqtiga Samoa"}
-            ls{"Waqtiga Caadiga Ah ee Samoa"}
+            ld{"Waqtiga Dharaarta ee American Samoa"}
+            lg{"Wakhtiga American Samoa"}
+            ls{"Waqtiga Caadiga Ah ee American Samoa"}
         }
         "meta:Seychelles"{
             ls{"Waqtiga Siishalis"}
@@ -1675,8 +1613,8 @@ so{
         }
         "meta:Taipei"{
             ld{"Waqtiga Dharaarta ee Teybey"}
-            lg{"Waqtiga Teybey"}
-            ls{"Waqtiga Caadiga Ah ee Teybey"}
+            lg{"Waqtiga Taiwan"}
+            ls{"Waqtiga Caadiga Ah ee Taiwan"}
         }
         "meta:Tajikistan"{
             ls{"Waqtiga Tajikistan"}

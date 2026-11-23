@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 en_AU{
     %%Parent{"en_001"}
     units{
@@ -22,9 +22,6 @@ en_AU{
             kilometer{
                 dnam{"kilometre"}
             }
-            micrometer{
-                dnam{"micrometres"}
-            }
         }
         pressure{
             pound-force-per-square-inch{
@@ -35,7 +32,6 @@ en_AU{
         }
         temperature{
             generic{
-                dnam{"degrees"}
                 one{"{0} degree"}
                 other{"{0} degrees"}
             }
@@ -75,33 +71,15 @@ en_AU{
         }
         duration{
             century{
-                dnam{"C."}
-                one{"{0}C."}
-                other{"{0}C."}
-            }
-            microsecond{
-                dnam{"μsec."}
-            }
-            millisecond{
-                dnam{"msec."}
-            }
-            second{
-                dnam{"sec."}
-                one{"{0}s."}
-                other{"{0}s."}
-                per{"{0} ps."}
+                dnam{"C"}
+                one{"{0}C"}
+                other{"{0}C"}
             }
         }
         speed{
             kilometer-per-hour{
                 one{"{0} km/h"}
                 other{"{0} km/h"}
-            }
-        }
-        temperature{
-            celsius{
-                one{"{0}°C"}
-                other{"{0}°C"}
             }
         }
         volume{
@@ -176,13 +154,6 @@ en_AU{
         angle{
             arc-minute{
                 dnam{"arcmin."}
-                one{"{0} arcmin."}
-                other{"{0} arcmin."}
-            }
-            arc-second{
-                dnam{"arcsec."}
-                one{"{0} arcsec."}
-                other{"{0} arcsec."}
             }
         }
         concentr{
@@ -209,37 +180,12 @@ en_AU{
                 one{"{0} L/km"}
                 other{"{0} L/km"}
             }
-            mile-per-gallon{
-                dnam{"miles/gal. US"}
-                one{"{0} m.p.g. US"}
-                other{"{0} m.p.g. US"}
-            }
-            mile-per-gallon-imperial{
-                dnam{"miles/gal."}
-                one{"{0} m.p.g."}
-                other{"{0} m.p.g."}
-            }
         }
         duration{
             century{
-                dnam{"C."}
-                one{"{0} C."}
-                other{"{0} C."}
-            }
-            microsecond{
-                dnam{"μsec."}
-            }
-            millisecond{
-                dnam{"millisec."}
-            }
-            nanosecond{
-                dnam{"nanosec."}
-            }
-            second{
-                dnam{"sec."}
-                one{"{0} sec."}
-                other{"{0} secs"}
-                per{"{0} ps."}
+                dnam{"C"}
+                one{"{0} C"}
+                other{"{0} C"}
             }
         }
         energy{
@@ -266,18 +212,9 @@ en_AU{
             }
         }
         pressure{
-            inch-ofhg{
-                dnam{"in Hg"}
-            }
             millibar{
-                dnam{"mb"}
                 one{"{0} mb"}
                 other{"{0} mb"}
-            }
-            millimeter-ofhg{
-                dnam{"mm Hg"}
-                one{"{0} mm Hg"}
-                other{"{0} mm Hg"}
             }
         }
         speed{

@@ -1,28 +1,14 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 es_419{
     NumberElements{
         latn{
             patterns{
+                accountingFormat%alphaNextToNumber{"¤ #,##0.00"}
                 currencyFormat{"¤#,##0.00"}
+                currencyFormat%alphaNextToNumber{"¤ #,##0.00"}
                 percentFormat{"#,##0%"}
-            }
-            patternsLong{
-                decimalFormat{
-                    1000000000000{
-                        one{"0 billón"}
-                        other{"0 billón"}
-                    }
-                    10000000000000{
-                        one{"00 billones"}
-                        other{"00 billones"}
-                    }
-                    100000000000000{
-                        one{"000 billones"}
-                        other{"000 billones"}
-                    }
-                }
             }
             patternsShort{
                 currencyFormat{
@@ -31,12 +17,12 @@ es_419{
                         other{"¤0 K"}
                     }
                     10000{
-                        one{"¤00 K"}
-                        other{"¤00 K"}
+                        one{"¤00 k"}
+                        other{"¤00 k"}
                     }
                     100000{
-                        one{"¤000 K"}
-                        other{"¤000 K"}
+                        one{"¤000 k"}
+                        other{"¤000 k"}
                     }
                     1000000{
                         one{"¤0 M"}
@@ -55,12 +41,12 @@ es_419{
                         other{"¤0000 M"}
                     }
                     10000000000{
-                        one{"¤00 MRD"}
-                        other{"¤00 MRD"}
+                        one{"¤00 mil M"}
+                        other{"¤00 mil M"}
                     }
                     100000000000{
-                        one{"¤000 MRD"}
-                        other{"¤000 MRD"}
+                        one{"¤000 mil M"}
+                        other{"¤000 mil M"}
                     }
                     1000000000000{
                         one{"¤0 B"}
@@ -81,12 +67,12 @@ es_419{
                         other{"¤ 0 K"}
                     }
                     10000{
-                        one{"¤ 00 K"}
-                        other{"¤ 00 K"}
+                        one{"¤ 00 k"}
+                        other{"¤ 00 k"}
                     }
                     100000{
-                        one{"¤ 000 K"}
-                        other{"¤ 000 K"}
+                        one{"¤ 000 k"}
+                        other{"¤ 000 k"}
                     }
                     1000000{
                         one{"¤ 0 M"}
@@ -105,12 +91,12 @@ es_419{
                         other{"¤ 0000 M"}
                     }
                     10000000000{
-                        one{"¤ 00 MRD"}
-                        other{"¤ 00 MRD"}
+                        one{"¤ 00 mil M"}
+                        other{"¤ 00 mil M"}
                     }
                     100000000000{
-                        one{"¤ 000 MRD"}
-                        other{"¤ 000 MRD"}
+                        one{"¤ 000 mil M"}
+                        other{"¤ 000 mil M"}
                     }
                     1000000000000{
                         one{"¤ 0 B"}
@@ -309,12 +295,12 @@ es_419{
             }
             eras{
                 abbreviated{
-                    "a.C.",
-                    "d.C.",
+                    0{"a.C."}
+                    1{"d.C."}
                 }
                 abbreviated%variant{
-                    "a.e.c.",
-                    "e.c.",
+                    0{"a.e.c."}
+                    1{"e.c."}
                 }
             }
             intervalFormats{
@@ -362,12 +348,6 @@ es_419{
                 Md{
                     M{"d/M–d/M"}
                     d{"d/M–d/M"}
-                }
-                h{
-                    a{"h a–h a"}
-                }
-                hmv{
-                    a{"h:mm a–h:mm a v"}
                 }
                 hv{
                     a{"h a–h a v"}
@@ -439,7 +419,7 @@ es_419{
         indian{
             eras{
                 abbreviated{
-                    "Saka",
+                    0{"Saka"}
                 }
             }
             monthNames{
@@ -498,73 +478,19 @@ es_419{
         roc{
             eras{
                 abbreviated{
-                    "antes de R.O.C.",
-                    "R.O.C.",
+                    0{"antes de R.O.C."}
+                    1{"R.O.C."}
                 }
             }
         }
     }
     characterLabel{
-        african_scripts{"Símbolos de escritura de África"}
-        american_scripts{"Símbolos de escritura de América"}
-        animal{"animal"}
-        animals_nature{"naturaleza y animales"}
-        arrows{"flecha"}
-        body{"cuerpo"}
-        box_drawing{"Cuadro de dibujo"}
-        building{"edificio"}
-        consonantal_jamo{"Jamo consonántico"}
-        currency_symbols{"símbolos de monedas"}
-        dash_connector{"Guión/conector"}
-        digits{"dígitos"}
-        downwards_upwards_arrows{"Flechas hacia arriba y hacia abajo"}
-        european_scripts{"Símbolos de escritura de Europa"}
-        female{"femenino"}
-        flag{"bandera"}
-        flags{"banderas"}
-        format{"Formato"}
-        format_whitespace{"formato y espacio duro"}
-        full_width_form_variant{"Variantes de formato de ancho completo"}
-        geometric_shapes{"Formas geométricas"}
+        box_drawing{"Cuadros de dibujo"}
         half_width_form_variant{"Variantes de formato de ancho medio"}
-        han_characters{"caracteres Han"}
-        han_radicals{"Radicales Han"}
         hanzi_simplified{"Hanzi (simplificado)"}
         hanzi_traditional{"Hanzi (tradicional)"}
-        heart{"corazón"}
-        historic_scripts{"Símbolos de escritura históricos"}
         japanese_kana{"Kana japonés"}
-        keycap{"tecla mayus"}
-        leftwards_rightwards_arrows{"Flechas hacia la derecha y hacia la izquierda"}
-        letterlike_symbols{"símbolos con letras"}
-        limited_use{"uso limitado"}
-        middle_eastern_scripts{"Símbolos de escritura de Oriente Medio"}
-        miscellaneous{"Miscelánea"}
-        modern_scripts{"sistemas de escritura modernos"}
-        modifier{"Modificador"}
-        nature{"naturaleza"}
-        nonspacing{"sin espaciado"}
-        other{"otros"}
-        paired{"Asociado"}
-        person{"persona"}
-        phonetic_alphabet{"alfabeto fonético"}
-        place{"lugar"}
-        plant{"planta"}
-        sign_standard_symbols{"señal o símbolo"}
-        small_form_variant{"Variantes de formato pequeño"}
-        smiley{"Caras sonrientes"}
-        south_asian_scripts{"sistemas de escritura de Asia del Sur"}
-        southeast_asian_scripts{"sistemas de escritura de Asia Sudoriental"}
-        sport{"deporte"}
-        symbols{"símbolo"}
-        tone_marks{"marcas tonales"}
-        travel{"viaje"}
-        travel_places{"viajes y destinos"}
-        variant_forms{"variantes"}
-        vocalic_jamo{"Jamo vocálico"}
-        weather{"clima"}
-        western_asian_scripts{"sistemas de escritura de Asia Occidental"}
-        whitespace{"espacio duro"}
+        weather{"Clima"}
     }
     fields{
         day-short{
@@ -584,38 +510,6 @@ es_419{
         }
         dayperiod{
             dn{"a.m./p.m."}
-        }
-        fri-narrow{
-            relativeTime{
-                past{
-                    one{"hace {0} viernes"}
-                    other{"hace {0} viernes"}
-                }
-            }
-        }
-        fri-short{
-            relativeTime{
-                past{
-                    one{"hace {0} viernes"}
-                    other{"hace {0} viernes"}
-                }
-            }
-        }
-        sat-narrow{
-            relativeTime{
-                past{
-                    one{"hace {0} sábados"}
-                    other{"hace {0} sábados"}
-                }
-            }
-        }
-        sun{
-            relativeTime{
-                future{
-                    one{"en {0} domingo"}
-                    other{"en {0} domingos"}
-                }
-            }
         }
         week-short{
             relative{

@@ -1,6 +1,6 @@
 ﻿// © 2016 and later: Unicode, Inc. and others.
 // License & terms of use: http://www.unicode.org/copyright.html
-// Generated using tools/cldr/cldr-to-icu/build-icu-data.xml
+// Generated using tools/cldr/cldr-to-icu/
 nn{
     %%Parent{"no"}
     Keys{
@@ -11,7 +11,9 @@ nn{
         colNumeric{"numerisk sortering"}
         colStrength{"sorteringsstyrke"}
         collation{"sorteringsrekkjefølgje"}
+        em{"emojivising"}
         lb{"lineskiftstil"}
+        lw{"lineskift innanfor ord"}
         numbers{"tal"}
     }
     Languages{
@@ -33,7 +35,6 @@ nn{
         ebu{"embu"}
         egy{"gammalegyptisk"}
         elx{"elamite"}
-        fil{"filippinsk"}
         fro{"gammalfransk"}
         frs{"austfrisisk"}
         fur{"friulisk"}
@@ -83,7 +84,6 @@ nn{
         tce{"sørleg tutchone"}
         tiv{"tivi"}
         tkl{"tokelau"}
-        tn{"tswana"}
         tog{"tonga (Nyasa)"}
         ttm{"nordleg tutchone"}
         tvl{"tuvalu"}
@@ -120,7 +120,6 @@ nn{
         Perm{"gammalpermisk"}
         Phlp{"salmepahlavi"}
         Sgnw{"teiknskrift"}
-        Syrc{"syriakisk"}
         Syre{"syriakisk (estrangelo-variant)"}
         Syrj{"syriakisk (vestleg variant)"}
         Syrn{"syriakisk (austleg variant)"}
@@ -140,10 +139,11 @@ nn{
         cf{
             account{"valutaformat for rekneskapsføring"}
         }
+        cf%core{
+            account{"rekneskapsføring"}
+        }
         collation{
-            big5han{"tradisjonell kinesisk sortering"}
             ducet{"standard Unicode-sorteringsrekkjefølgje"}
-            gb2312han{"forenkla kinesisk sortering"}
             pinyin{"pinyin-sortering"}
             standard{"standard sorteringsrekkjefølgje"}
         }
@@ -161,6 +161,13 @@ nn{
             loose{"laus lineskiftstil"}
             normal{"normal lineskiftstil"}
             strict{"streng lineskiftstil"}
+        }
+        lb%core{
+            loose{"laus"}
+        }
+        lw%core{
+            keepall{"behald alle"}
+            phrase{"behald i fraser"}
         }
         numbers{
             arab{"arabisk-indiske siffer"}
