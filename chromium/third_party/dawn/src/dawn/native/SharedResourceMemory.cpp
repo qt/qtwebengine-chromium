@@ -336,7 +336,7 @@ MaybeError SharedResourceMemory::EndAccess(Resource* resource, EndAccessState* s
     // lazily clears it instead of reading back undefined contents. If the resource wasn't used
     // during the access, its initialized state is still the one set on BeginAccess.
     bool dirtyDueToErrors = !err.IsSuccess() && usedDuringAccess;
-    state->initialized = resource->IsResourceInitialized() && !dirtyDueToErrors;
+    state->initialized = resource->IsInitialized() && !dirtyDueToErrors;
     return err;
 }
 
