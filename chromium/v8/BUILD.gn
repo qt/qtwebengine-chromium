@@ -6495,6 +6495,9 @@ v8_source_set("v8_base_without_compiler") {
     "src/objects/elements.cc",
     "src/objects/objects.cc",
     "src/parsing/parser.cc",
+
+    "src/extensions/ignition-statistics-extension.cc",
+    "src/extensions/statistics-extension.cc",
   ]
 
   if (v8_current_cpu == "x86") {
