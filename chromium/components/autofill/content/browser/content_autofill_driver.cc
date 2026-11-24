@@ -237,7 +237,7 @@ R RouteToAgent(AutofillDriverRouter& router,
                void (mojom::AutofillAgent::*agent_fun)(AgentArgs...),
                ActualArgs&&... args) {
   return (router.*router_fun)(
-      [&agent_fun](autofill::AutofillDriver& target, AgentArgs... args) {
+      [&agent_fun](autofill::AutofillDriver& target, AgentArgs... agent_args) {
         if (!target.IsActive()) {
           // We early-return rather than crashing or killing the renderer
           // because Autofill might want to communicate with a frame that just
@@ -247,7 +247,7 @@ R RouteToAgent(AutofillDriverRouter& router,
         }
         mojom::AutofillAgent& agent =
             *static_cast<ContentAutofillDriver&>(target).GetAutofillAgent();
-        (agent.*agent_fun)(std::forward<AgentArgs>(args)...);
+        (agent.*agent_fun)(std::forward<AgentArgs>(agent_args)...);
       },
       std::forward<ActualArgs>(args)...);
 }
@@ -275,10 +275,10 @@ void RouteToManager(ContentAutofillDriver& source,
     return;
   }
   return (router.*router_fun)(
-      [&manager_fun](autofill::AutofillDriver& target, ManagerArgs... args) {
+      [&manager_fun](autofill::AutofillDriver& target, ManagerArgs... manager_args) {
         AutofillManager& manager = target.GetAutofillManager();
         (manager.*
-         manager_fun)(WithNewVersion(std::forward<ManagerArgs>(args))...);
+         manager_fun)(WithNewVersion(std::forward<ManagerArgs>(manager_args))...);
       },
       source, Lift(source, std::forward<ActualArgs>(args))...);
 }

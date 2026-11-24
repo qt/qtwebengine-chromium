@@ -473,10 +473,10 @@ class CONTENT_EXPORT FileSystemAccessManagerImpl
     auto wrapped_callback = base::BindRepeating(
         [](scoped_refptr<base::SequencedTaskRunner> runner,
            const base::RepeatingCallback<void(CallbackArgs...)>& callback,
-           CallbackArgs... args) {
+           CallbackArgs... callback_args) {
           runner->PostTask(
               FROM_HERE,
-              base::BindOnce(callback, std::forward<CallbackArgs>(args)...));
+              base::BindOnce(callback, std::forward<CallbackArgs>(callback_args)...));
         },
         base::SequencedTaskRunner::GetCurrentDefault(), std::move(callback));
 
