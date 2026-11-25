@@ -37,7 +37,12 @@ DawnWireServices::DawnWireServices(
     MappedMemoryManager* mapped_memory,
     std::unique_ptr<TransferBuffer> transfer_buffer,
     bool support_locking)
-    : lock_(support_locking ? std::make_optional<base::Lock>() : std::nullopt),
+    : lock_([&]() -> std::optional<base::Lock> {
+        if (support_locking)
+          return std::make_optional<base::Lock>();
+        else
+          return std::nullopt;
+      }()),
       memory_transfer_service_(mapped_memory),
       serializer_(webgpu_implementation,
                   helper,
